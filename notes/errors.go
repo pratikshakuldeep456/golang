@@ -6,7 +6,7 @@ import (
 	_ "net/http/pprof"
 )
 
-func main() {
+func Errors() {
 	go func() {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
 	}()

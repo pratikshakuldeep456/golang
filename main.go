@@ -17,5 +17,7 @@ func Counter() func() int {
 }
 
 func main() {
-	notes.Main2()
+	// notes.Main2()
+	// notes.Context()
+	notes.NonBlockingCh()
 }
