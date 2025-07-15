@@ -22,5 +22,6 @@ func main() {
 	// notes.NonBlockingCh()
 	// notes.WorkerPool()
 	// notes.WaitGrp()
-	notes.Limit()
+	// notes.Limit()
+	notes.Mutex()
 }
