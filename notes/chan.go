@@ -1,4 +1,4 @@
-package main
+package notes
 
 import "fmt"
 
@@ -9,7 +9,7 @@ func Recchan(pings <-chan string, pongs chan<- string) {
 	msg := <-pings
 	pongs <- msg
 }
-func main1() {
+func Main1() {
 	fmt.Println("Hello, 世界")
 	ping := make(chan string, 1)
 	pong := make(chan string, 1)
