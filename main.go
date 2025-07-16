@@ -23,5 +23,6 @@ func main() {
 	// notes.WorkerPool()
 	// notes.WaitGrp()
 	// notes.Limit()
-	notes.Mutex()
+	// notes.Mutex()
+	notes.FormatString()
 }
