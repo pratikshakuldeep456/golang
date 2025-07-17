@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"pratikshakuldeep456/golang/notes"
 )
 
 func Counter() func() int {
@@ -24,5 +23,12 @@ func main() {
 	// notes.WaitGrp()
 	// notes.Limit()
 	// notes.Mutex()
-	notes.FormatString()
+	// notes.FormatString()
+	// notes.Json()
+	// notes.Parse()
+	// notes.ReadWrite()
+	// notes.ContextFunc()
+
+	// cmd := exec.Command("echo", "Hello from child process")
+	// cmd.Run() // Spawns the process
 }
