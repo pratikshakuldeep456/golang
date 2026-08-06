@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	fooddelivery "pratikshakuldeep456/golang/LLD/foodDelievery"
+	"pratikshakuldeep456/golang/LLD/fooddelievery/service"
 	designpattern "pratikshakuldeep456/golang/designPattern"
 	"pratikshakuldeep456/golang/solid"
 )
@@ -84,4 +86,44 @@ func main() {
 	stock.Attach(&designpattern.EmailNotifier{EmailAddress: "trader@example.com"})
 
 	stock.Detach(&designpattern.SMSNotifier{PhoneNumber: "+1234567890"})
+
+	// fooddelivery.User
+
+	svc := service.GetInstance()
+	svc.ListResraurent()
+	res1 := &fooddelivery.Restaurent{
+		ID:       1,
+		Name:     "meghana",
+		Location: "hsr",
+		About:    "nonveg sjdfdgjhjkgfsdk",
+	}
+	res2 := &fooddelivery.Restaurent{
+		ID:       2,
+		Name:     "meghana",
+		Location: "bellendur",
+		About:    "nonveg sjdfdgjhjkgfsdk",
+	}
+
+	res3 := &fooddelivery.Restaurent{
+		ID:       3,
+		Name:     "meghana",
+		Location: "kora",
+		About:    "nonveg sjdfdgjhjkgfsdk",
+	}
+
+	svc.AddRestarent(res1)
+	svc.AddRestarent(res2)
+	svc.AddRestarent(res3)
+	svc.ListResraurent()
+	svc.AddMenu(&fooddelivery.Menu{ID: 1,
+		RId:      2,
+		FoodMenu: "biryani",
+		Quantity: 10,
+		Price:    400})
+
+	svc.ViewMenu(1)
+	svc.ViewMenu(2)
+	//mid int, userid int, resid int, quantity int, price float32
+	svc.AddtoCart(1, 1, 1, 2, 800)
+
 }

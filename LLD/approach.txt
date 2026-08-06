@@ -1,0 +1,10 @@
+LLD Approach — Quick Checklist
+
+Requirements – restate problem, list functional + key non-functional reqs
+Clarify – scope, actors, assumptions (3-5 sharp questions)
+Identify entities – nouns → classes; entity vs value object; relationships (has-a/is-a)
+Identify behaviors – verbs → methods; assign via SRP (avoid god classes)
+Apply patterns – only if natural fit (Strategy, Factory, Observer, State, Singleton); justify "why"
+Class diagram – interfaces first, then concrete classes; realistic method signatures
+Edge cases – concurrency, failure/rollback, extensibility ("what if new req added?")
+Code walkthrough – 2-3 key classes only, clean & idiomatic

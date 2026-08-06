@@ -1,0 +1,48 @@
+Functional requirements:
+These are non-negotiable for a shared doc system.
+
+Users can create, read, update documents
+Multiple users edit the same document simultaneously
+Changes visible to others in near real time
+Share doc via link or email
+
+Permissions:
+View
+Comment
+Edit
+
+Non Functional Requirements
+Concurrency handling
+If two users edit same position, system resolves conflicts
+(OT / CRDT later — don’t dive yet) 
+
+
+**Edge Case Fixes — Short**
+ 
+1. **Same position edit** → Operation object (pos, content, version) → server applies OT/CRDT → broadcast result
+2. **Viewer/Commenter edits** → server-side permission check on every write API, never trust client
+3. **New user joins** → send snapshot (+ replay ops since snapshot if large doc)
+4. **Owner revokes access** → check permission per-operation, force disconnect on revoke, reject in-flight ops after revoke time
+5. **Out-of-order/duplicate ops** → version number/vector clock for ordering + unique op ID for dedup
+
+Next: entities/classes?
+
+
+User, Document, Permission, Operation, Session, Snapshot — plus Comment
+
+user - id , name, email
+ Document - id, ownerid, name , current version, timestamp 
+ permission - docid , userid, type (editor,viewer, commentro, owner) 
+ session - id, userid , docid , status (active, stale)
+ operaton - id , userid, docid, position, text , lastversion, type(insert| dellete)
+ comment - id, docid, position, text our entity relation 
+
+
+ apis ->
+ /doc/create
+ /doc/dellete
+ /doc/edit
+ /doc/share
+GET /documents&limit={}&offset={}
+GET /docs/:id 
+

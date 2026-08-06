@@ -1,0 +1,23 @@
+What goes wrong without OT:
+If server just applies both blindly in the order received:
+
+Apply A's insert at position 6 → "HELLO BIG WORLD"
+Apply B's delete at positions 0-6 (still thinks doc is "HELLO WORLD") → deletes wrong chunk → "BIG WORLD" — wait, but actually it'd delete "HELLO B" from the new string since positions shifted → garbage result, doc corrupted
+
+What OT does:
+
+Server applies A's insert first → doc is now "HELLO BIG WORLD", version 2
+B's delete op arrives, says "delete positions 0-6, based on version 1 (before A's edit)"
+Server realizes: "B's operation was written for the old doc. Since A inserted 4 characters ("BIG ") at position 6, which is after B's delete range (0-6), B's delete range doesn't need to shift — position 6 is still valid"
+Server applies B's delete on positions 0-6 of the current doc → removes "HELLO " → result: "BIG WORLD"
+
+Final doc: "BIG WORLD" — both edits preserved correctly, because the server did the math to keep B's op valid against what A already did.
+
+
+
+How CRDT resolves it — no server needed:
+
+Each client eventually receives both operations
+Since both X and Y say "I come after id:4," there's a tie-breaking rule baked into the CRDT — usually something like "whoever has the higher user ID (or op ID) goes first"
+Say Y's ID is numerically higher → everyone's client independently computes: insert order = L(4), Y(7), X(6)
+Final doc: "HELLOYX" — every single client (even if they got the operations in a different order, or offline for a while) computes the exact same final result, because the tie-break rule is deterministic and doesn't depend on arrival order
