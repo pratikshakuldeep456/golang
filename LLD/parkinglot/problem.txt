@@ -1,0 +1,16 @@
+
+
+- multilevel parking
+- let's say pricing is based on duration — the longer you park, the more you pay, and it varies by vehicle type 
+   - But down the line, we might want to introduce other pricing models 
+   — like surge pricing during peak hours, or flat event-based pricing for special occasions.
+
+Strategy pattern.
+You'd define a PricingStrategy interface with something like calculateFee(vehicleType, entryTime, exitTime)
+TimeBasedPricingStrategy, SurgePricingStrategy, EventBasedPricingStrategy,
+
+- payment types:
+"Let's support multiple options — cash, credit/debit card, and UPI.
+
+At entry, all you know is: vehicle type, entry time, which spot got assigned. 
+You don't know the duration yet, so you can't compute a fee yet — hence no payment yet.

@@ -1,0 +1,33 @@
+Design an elevator control system for a building. 
+ - The system should handle multiple elevators,
+ - floor requests,
+ -  and move elevators efficiently to service requests.
+
+
+- floors 
+- elevator
+- buttons 
+- direction (up/down) 
+    
+    ways to asign car 
+     up/down
+     or pick a des floor and get assiged the elevator
+
+     - inside ellevator user can select multiple destinaton
+     - req without direction (when inside elevator press the floor number)
+     - req with direction (up/down)
+     - eelvator capapctiy?
+     - should we distinguish that someone inside floor 
+     - system handle multiple concurrent req(Should the elevator stop at floor 5 on its way to 7?)
+
+Filter to eligible elevators. An elevator is eligible if:
+
+It's idle (not moving) → always eligible
+It's moving UP and currently at or below floor 6 → eligible, 
+ -  since it'll pass floor 6 on the way and can pick up without detour
+It's moving DOWN → not eligible right now 
+ — even if it's close, it's moving away first and would need to fully reverse before reaching floor 6, which usually costs more time than picking a different elevator
+It's moving UP but already past floor 6 (e.g., elevator at floor 8, moving up) 
+   → not eligible for this trip; it'd have to finish its sweep, reverse, and come back down — treat it like a "moving away" case
+
+Among eligible elevators, pick by distance. Simplest metric: abs(elevator.CurrentFloor - requestFloor).

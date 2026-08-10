@@ -8,3 +8,6 @@ Apply patterns – only if natural fit (Strategy, Factory, Observer, State, Sing
 Class diagram – interfaces first, then concrete classes; realistic method signatures
 Edge cases – concurrency, failure/rollback, extensibility ("what if new req added?")
 Code walkthrough – 2-3 key classes only, clean & idiomatic
+
+
+
