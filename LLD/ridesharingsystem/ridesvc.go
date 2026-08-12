@@ -68,6 +68,11 @@ func (rs *RideService) RequestRide(rId int, src, des *Location, rType RideType) 
 
 	//create ride
 	rider := rs.Riders[rId]
+
+	bestDriver := rs.FindDriver(rider.Location, rType)
+	if bestDriver == nil {
+		return 0, ErrNoDriverAvailable
+	}
 	ride1 := &Ride{
 		ID:          int(generateRideID()),
 		RequestedBy: rider,
@@ -81,22 +86,32 @@ func (rs *RideService) RequestRide(rId int, src, des *Location, rType RideType) 
 	}
 	fmt.Println("ride stored")
 	rs.Rides[ride1.ID] = ride1
+	bestDriver.Status = BUSY
 	return int32(ride1.ID), nil
 
 }
 
-func (rs *RideService) AcceptRide(rid int, dId int, rType RideType) (string, error) {
-	if _, exits := rs.Rides[rid]; !exits {
-		return "", ErrRiderNotPresentInSystem
+func (rs *RideService) AcceptRide(rid int, dId int) (string, error) {
+	rs1, exits := rs.Rides[rid]
+	if !exits {
+		return "", ErrRideNotPresentInSystem
 	}
 
-	if _, exists := rs.Driver[dId]; !exists {
+	d1, exists := rs.Driver[dId]
+	if !exists {
 		return "", ErrDriverNotPresentInSystem
+	}
+
+	if rs1.Status != REQUESTED {
+		return "", nil
+	}
+	if d1.RideType != rs1.RideType {
+		return "", ErrRiderBusyOrDifferentRideType
 	}
 
 	driver := rs.Driver[dId]
 	// check status of driver
-	if rs.Driver[dId].Status != AVAILABLE || rType != rs.Driver[dId].RideType {
+	if rs.Driver[dId].Status != AVAILABLE || rs.Rides[rid].RideType != rs.Driver[dId].RideType {
 		return "", ErrRiderBusyOrDifferentRideType
 	}
 	// if action == ACCEPTED {
@@ -109,7 +124,7 @@ func (rs *RideService) AcceptRide(rid int, dId int, rType RideType) (string, err
 
 }
 func (rs *RideService) CalculateFare(rID int32) int32 {
-	if _, exits := rs.Riders[int(rID)]; !exits {
+	if _, exits := rs.Rides[int(rID)]; !exits {
 		return 0
 	}
 	dis := rs.CalculateDistance(rs.Rides[int(rID)].Src, rs.Rides[int(rID)].Des)
@@ -132,7 +147,7 @@ func (rs *RideService) FindDriver(rLoc *Location, rType RideType) *Driver {
 	for _, v := range rs.Driver {
 		fmt.Println("driver fetcing", v.ID)
 		if v.Status == AVAILABLE && rType == v.RideType {
-			fmt.Println("driver fetcing", v.ID)
+			//	fmt.Println("driver fetcing", v.ID)
 			//calc distance
 			best := rs.CalculateDistance(v.Location, rLoc)
 			if best <= DistanceLimit {
@@ -148,6 +163,10 @@ func (rs *RideService) FindDriver(rLoc *Location, rType RideType) *Driver {
 
 		}
 	}
-	fmt.Println("driver we got is", driver.ID)
+	if driver != nil {
+		fmt.Println("driver we got is", driver.ID)
+	} else {
+		fmt.Println("no eligible driver found")
+	}
 	return driver
 }
