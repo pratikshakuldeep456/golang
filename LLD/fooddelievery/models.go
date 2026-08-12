@@ -11,14 +11,15 @@ type Cart struct {
 	ID     int
 	UserId int
 	RId    int
-	Price  float32
-	Items  []CartItem
+	// MenuID int
+	Price float32
+	Items []CartItem
 }
 
 type CartItem struct {
 	ID int
 	// CartId   int
-	MenuID   int
+
 	Name     string
 	Quantity int
 	Price    float32
@@ -65,6 +66,6 @@ type OrderItem struct {
 	// OrderId    int
 	MenuItemId int
 	Name       string
-	Price      int
+	Price      float32
 	Quantity   int
 }
