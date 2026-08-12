@@ -4,22 +4,18 @@ type User struct {
 	ID      int
 	Email   string
 	Address string
-	// CartData *Cart
 }
 
 type Cart struct {
 	ID     int
 	UserId int
 	RId    int
-	// MenuID int
-	Price float32
-	Items []CartItem
+	Price  float32
+	Items  []CartItem
 }
 
 type CartItem struct {
-	ID int
-	// CartId   int
-
+	ID       int
 	Name     string
 	Quantity int
 	Price    float32
@@ -44,12 +40,31 @@ type MenuItem struct {
 	FoodMenu string
 	Price    float32
 }
+
+// --- New: enums needed to complete checkout/payment/order flow ---
+
+// type PaymentStatus string
+
+// const (
+// 	PAYMENT_PENDING PaymentStatus = "pending"
+// 	PAYMENT_SUCCESS PaymentStatus = "success"
+// 	PAYMENT_FAILED  PaymentStatus = "failed"
+// )
+
 type Payment struct {
 	ID      int
 	OrderID int
 	Amount  float32
 	Status  PaymentStatus
 }
+
+// type OrderStatus string
+
+// const (
+// 	ORDER_PLACED         OrderStatus = "placed"
+// 	ORDER_PAYMENT_FAILED OrderStatus = "payment_failed"
+// 	ORDER_CANCELLED      OrderStatus = "cancelled"
+// )
 
 type Order struct {
 	ID         int
@@ -62,10 +77,22 @@ type Order struct {
 }
 
 type OrderItem struct {
-	ID int
-	// OrderId    int
+	ID         int
 	MenuItemId int
 	Name       string
-	Price      float32
+	Price      int
 	Quantity   int
+}
+
+// --- New: payment gateway abstraction (3rd party, per scope decision) ---
+
+type PaymentGateway interface {
+	Pay(amount float32, orderID int) (string, error)
+}
+
+// Stub implementation — in reality this would call Stripe/Razorpay/etc.
+type ThirdPartyPaymentGateway struct{}
+
+func (t *ThirdPartyPaymentGateway) Pay(amount float32, orderID int) (string, error) {
+	return "payment successful", nil
 }
