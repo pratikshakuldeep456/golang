@@ -1,0 +1,75 @@
+Problem Statement
+
+Design a ride-hailing system like Uber.
+ - Riders should be able to book a ride, 
+  - and the system should match them with a nearby driver.
+  - nd once the ride is complete, calculate the fare
+
+
+- ride types | auto | cab | can premium
+- unde which  location  radius we are matcching rider n driver - 5km
+- can a ride request be shown to multiple driver n vice versa at a time. 
+  do we have to  handle the concurrent operations also
+-- he system picks the single best driver and sends the request 
+to just that one driver. If they don't respond or reject,
+ move to the next best candidate. 
+ We're not doing a broadcast-to-multiple-drivers-and-first-to-accept-wins model 
+— that adds real complexity around race 
+  conditions we don't need to get into here."
+
+
+
+- how fare calculation is suppsoed to be calcuted here -> 
+"For now, base it on distance and time — something like a base fare, plus a rate per kilometer,
+ plus a rate per minute. But don't hardcode this 
+ — assume in the future we'll want surge pricing during
+  high-demand periods, or different fare structures 
+  per ride type (auto vs. cab vs. premium likely have 
+  different base rates). So design the fare calculation
+   so we can swap in new pricing logic without touching existing code."
+
+rider can have only one active ride
+
+entiies->
+rider
+driver
+fare
+ride
+location -> src, des
+RIDE STATUS = REUQESTED, ACEEPTED,  ONGOING, COMPLETED , ancelled
+DRIVER STATUS = BUSY, AVAIBLBLE 
+
+
+Strategy = the algorithm itself — 
+ "how do I calculate fare." You'd have AutoPricingStrategy, 
+  CabPricingStrategy, PremiumPricingStrategy, 
+  each implementing PricingStrategy.
+  CalculateFare(distance, time) int32 with different rates.
+
+
+Factory = which strategy object do I hand back,
+    given a ride type — this is the same relationship 
+    you already built in parking lot between PaymentStrategyFactory
+     and PaymentStrategy. You don't want if rideType == AUTO { ... } 
+     else if rideType == CAB { ... } scattered across 
+     your codebase every time you need a pricing strategy — 
+     centralize that selection logic in one factory:
+
+type RideType string
+const (
+    AUTO    RideType = "auto"
+    CAB     RideType = "cab"
+    PREMIUM RideType = "premium"
+)
+func GetPricingStrategy(rideType RideType) PricingStrategy {
+    switch rideType {
+    case AUTO:
+        return &AutoPricingStrategy{}
+    case CAB:
+        return &CabPricingStrategy{}
+    case PREMIUM:
+        return &PremiumPricingStrategy{}
+    default:
+        return &CabPricingStrategy{} 
+    }
+}
