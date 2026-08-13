@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"pratikshakuldeep456/golang/LLD/ridesharingsystem"
+	"pratikshakuldeep456/golang/LLD/bookmyshow"
 )
 
 func Counter() func() int {
@@ -123,5 +123,6 @@ func main() {
 	// //mid int, userid int, resid int, quantity int, price float32
 	// svc.AddtoCart(1, 1, 1, 2, 800)
 
-	ridesharingsystem.RSTest()
+	//ridesharingsystem.RSTest()
+	bookmyshow.TestBMS()
 }

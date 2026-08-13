@@ -1,0 +1,29 @@
+Design a movie ticket booking system, like BookMyShow.
+ - Users should be able to search for a movie, 
+  - view showtimes, 
+   - select seats,
+    - and book tickets.
+
+
+user, movie, tickets, 
+- list movie with search text based on location 
+-  selects a movie 
+- show time  
+-  select show time - movie details has seat data(if booked or not) ,   metadata
+ - user seelct seats for booking 
+ - payment done ( multiple payment types)
+ - ticket geenrnated(id, qrcode, details, venue)
+
+my ques->
+ if 2 users booknig  a seat at same time. What will happen?
+
+   -> Only one of them should get the seat. The other should be told it's no longer 
+      available and asked to pick a different seat.
+     We can't have both users walk in expecting to sit in seat A5."
+
+
+
+Your parking spot only needed a single true/false — perfect fit for atomic.Bool's compare-and-swap. But a movie seat now needs to track multiple related fields together — Status (enum: AVAILABLE/RESERVED/BOOKED), ReservedAt (timestamp), BookingID (which booking holds it). atomic.Bool can only atomically guard one value;
+ the moment you need to check-and-update several fields as a single atomic unit,
+  you need a proper mutex around the whole struct (or the whole seat map), 
+  not just a lock-free primitive on one field.

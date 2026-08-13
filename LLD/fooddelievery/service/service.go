@@ -103,7 +103,7 @@ import (
 	"sync"
 
 	fooddelivery "pratikshakuldeep456/golang/LLD/foodDelievery"
-	"pratikshakuldeep456/golang/LLD/fooddelievery/service"
+	//"pratikshakuldeep456/golang/LLD/fooddelievery/service"
 )
 
 type FoodDelieverySVC struct {
