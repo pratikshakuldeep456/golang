@@ -1,0 +1,101 @@
+Interfaces (how they work internally, empty interface, type assertions/switches)
+defer, panic, recover (and defer's execution order/gotchas)
+select statement (patterns: timeout, non-blocking, fan-in)
+sync package (Mutex vs RWMutex, WaitGroup, sync.Once, when to use channels vs mutex)
+context package (cancellation, timeouts, passing values — and why not to overuse it)
+Error handling (wrapping with %w, errors.Is/errors.As, custom error types)
+
+
+
+1. defer
+Runs when the surrounding function returns (not at the line it's written). Multiple defers execute in LIFO order (last deferred, first executed).
+
+go
+defer fmt.Println("1")
+defer fmt.Println("2")
+// prints: 2, then 1
+
+Common uses: closing files/connections, unlocking mutexes, recovering from panics.
+
+2. panic / recover
+
+panic stops normal execution, starts unwinding the stack, running deferred calls as it goes.
+recover stops a panic mid-unwind and lets the program continue. Must be called directly inside a defer — calling it anywhere else does nothing.
+go
+func safeCall() {
+    defer func() {
+        if r := recover(); r != nil {
+            fmt.Println("recovered:", r)
+        }
+    }()
+    panic("boom")
+}
+
+3. sync.Mutex vs sync.RWMutex
+
+Mutex: exclusive lock — only one goroutine (reader or writer) at a time.
+RWMutex: allows multiple concurrent readers, OR one exclusive writer. Use RWMutex when reads vastly outnumber writes (e.g., a cache) — improves throughput. Use plain Mutex when access is mostly writes or reads/writes are balanced.
+
+4. context.Context
+Used to carry cancellation signals, deadlines/timeouts, and request-scoped values across API boundaries and goroutines.
+Main methods:
+
+ctx.Done() — channel closed when context is cancelled/expired
+ctx.Err() — why it was cancelled (context.Canceled or context.DeadlineExceeded)
+ctx.Value(key) — retrieve request-scoped value (use sparingly)
+Created via context.WithCancel, context.WithTimeout, context.WithDeadline, context.WithValue.
+
+5. Error wrapping (modern Go, 1.13+)
+Wrap with %w in fmt.Errorf:
+
+go
+if err != nil {
+    return fmt.Errorf("fetching user: %w", err)
+}
+
+Unwrap/inspect with:
+
+errors.Is(err, target) — checks if err (or anything it wraps) matches a sentinel error
+errors.As(err, &target) — checks if err (or anything it wraps) matches a specific error type, and extracts it
+
+
+
+
+
+How do you rate-limit or add a circuit breaker in Go?" 
+
+Rate limiter: Go's standard golang.org/x/time/rate 
+ackage gives you a token-bucket limiter:
+limiter := rate.NewLimiter(10, 20) // 10 req/sec, burst of 20
+if !limiter.Allow() {
+    return errors.New("rate limit exceeded")
+}
+
+Circuit breaker = "If a service keeps failing, stop calling it for a while instead of retrying uselessly."
+After a cooldown, it tries again cautiously ("half-open") to see if the service recovered.
+
+Why both matter together: Rate limiting protects your service from too much incoming traffic.
+ Circuit breaking protects your service from a downstream service that's already struggling
+  — so you don't make it worse by hammering it with retries
+
+
+and "How would you structure graceful shutdown for a Go service?
+
+-> srv := &http.Server{Addr: ":8080"}
+
+go func() {
+    if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+        log.Fatal(err)
+    }
+}()
+
+// Wait for interrupt signal
+quit := make(chan os.Signal, 1)
+signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+<-quit
+
+ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+defer cancel()
+srv.Shutdown(ctx) // stops accepting new requests, waits for in-flight ones to finish
+
+
