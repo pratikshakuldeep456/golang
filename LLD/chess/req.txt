@@ -1,0 +1,6 @@
+
+- 2 player game
+- 8*8 board
+- turn based 
+- players
+
