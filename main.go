@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"pratikshakuldeep456/golang/LLD/bookmyshow"
+	"pratikshakuldeep456/golang/LLD/cache"
 )
 
 func Counter() func() int {
@@ -124,5 +124,7 @@ func main() {
 	// svc.AddtoCart(1, 1, 1, 2, 800)
 
 	//ridesharingsystem.RSTest()
-	bookmyshow.TestBMS()
+	//bookmyshow.TestBMS()
+	//asyncworker.AsyncWorker()
+	cache.CacheTest()
 }

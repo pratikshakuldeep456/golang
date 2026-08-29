@@ -1,0 +1,11 @@
+Cache (LRU/LFU)
+→ HashMap /* Doubly Linked List combo */
+→ O(1) operations
+→ Eviction strategy 
+
+#LRU 
+
+//get 
+//insert
+//delete
+
