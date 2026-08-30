@@ -1,0 +1,210 @@
+// ============================================================
+// Entities
+// ============================================================
+
+class Customer:
+    id, name
+    cards: []Card
+
+class Card:
+    number, customerId
+    creditLimit
+    outstandingBalance
+    status              // ACTIVE | BLOCKED | EXPIRED
+    apr                 // annual percentage rate
+    lateFee
+    consecutiveMissedMinimums
+    billingCycleDay     // day of month statement generates
+    transactions: []Transaction
+    emiConversions: []EMIConversion
+    mutex
+
+class Transaction:
+    id, cardNumber, amount, merchant, timestamp
+    type                // PURCHASE | REFUND | PAYMENT | FEE | INTEREST
+    status              // PENDING | APPROVED | DECLINED
+    isConvertedToEMI: bool
+
+class Statement:
+    cardNumber
+    periodStart, periodEnd
+    generatedAt
+    totalDue, minimumDue
+    dueDate
+
+class EMIConversion:
+    transactionId
+    strategyType        // STANDARD | NO_COST
+    principal, tenureMonths
+    monthlyAmount
+    remainingInstallments
+
+
+// ============================================================
+// Authorize — PURCHASE, increases balance
+// ============================================================
+
+function Authorize(card, amount, merchant):
+    lock(card.mutex)
+
+    if card.status != ACTIVE:
+        unlock(card.mutex)
+        return error(BLOCKED_OR_EXPIRED)
+
+    available = card.creditLimit - card.outstandingBalance
+    if amount > available:
+        unlock(card.mutex)
+        return error(INSUFFICIENT_CREDIT)
+
+    card.outstandingBalance += amount
+    tx = new Transaction(amount, merchant, now(), type=PURCHASE, status=APPROVED)
+    card.transactions.add(tx)
+
+    unlock(card.mutex)
+    return success(tx)
+
+
+// ============================================================
+// ApplyPayment — PAYMENT, decreases balance
+// ============================================================
+
+function ApplyPayment(card, amount):
+    if amount <= 0:
+        return error(INVALID_AMOUNT)
+
+    lock(card.mutex)
+    applied = min(amount, card.outstandingBalance)
+    card.outstandingBalance -= applied
+
+    tx = new Transaction(applied, merchant=null, now(), type=PAYMENT, status=APPROVED)
+    card.transactions.add(tx)
+    unlock(card.mutex)
+
+    return success(applied)
+
+
+// ============================================================
+// ApplyRefund — REFUND, decreases balance, tied to original PURCHASE
+// ============================================================
+
+function ApplyRefund(card, originalTx, amount):
+    if originalTx.type != PURCHASE:
+        return error(INVALID_REFUND_TARGET)
+
+    lock(card.mutex)
+    applied = min(amount, originalTx.amount)
+    card.outstandingBalance -= applied
+
+    tx = new Transaction(applied, originalTx.merchant, now(), type=REFUND, status=APPROVED)
+    card.transactions.add(tx)
+    unlock(card.mutex)
+
+    return success(tx)
+
+
+// ============================================================
+// GenerateStatement — runs on card.billingCycleDay
+// ============================================================
+
+function GenerateStatement(card, periodStart, periodEnd):
+    lock(card.mutex)
+
+    newCharges = sum(tx.amount for tx in card.transactions
+                      if periodStart <= tx.timestamp < periodEnd
+                      and tx.type in [PURCHASE, FEE, INTEREST])
+
+    newCredits = sum(tx.amount for tx in card.transactions
+                      if periodStart <= tx.timestamp < periodEnd
+                      and tx.type in [PAYMENT, REFUND])
+
+    totalDue = card.outstandingBalance   // already reflects rollover + interest
+    minimumDue = calculateMinimumDue(totalDue)
+    dueDate = periodEnd + GRACE_PERIOD_DAYS
+
+    statement = new Statement(card.number, periodStart, periodEnd,
+                               generatedAt=now(), totalDue, minimumDue, dueDate)
+
+    unlock(card.mutex)
+    return statement
+
+
+function calculateMinimumDue(totalDue):
+    pct = totalDue * MIN_PERCENT
+    return max(pct, MIN_FLOOR)
+
+
+// ============================================================
+// ApplyBillingCycle — interest (type=INTEREST) + late fee (type=FEE)
+// ============================================================
+
+function ApplyBillingCycle(card, statement, totalPaid, daysInCycle):
+    lock(card.mutex)
+
+    if totalPaid >= statement.totalDue:
+        card.consecutiveMissedMinimums = 0
+        unlock(card.mutex)
+        return
+
+    remaining = statement.totalDue - totalPaid
+    interest = remaining * (card.apr / 365) * daysInCycle
+    card.outstandingBalance += interest
+    card.transactions.add(new Transaction(interest, merchant=null, now(), type=INTEREST))
+
+    if totalPaid < statement.minimumDue:
+        card.consecutiveMissedMinimums += 1
+        card.outstandingBalance += card.lateFee
+        card.transactions.add(new Transaction(card.lateFee, merchant=null, now(), type=FEE))
+
+        if card.consecutiveMissedMinimums == 1:
+            card.apr += PENALTY_APR_INCREASE
+        if card.consecutiveMissedMinimums >= 3:
+            card.status = BLOCKED
+    else:
+        card.consecutiveMissedMinimums = 0
+
+    unlock(card.mutex)
+
+
+// ============================================================
+// EMI — Strategy pattern (only applies to PURCHASE transactions)
+// ============================================================
+
+interface EMIStrategy:
+    function CalculateEMI(principal, tenureMonths) -> EMIPlan
+
+class StandardEMI implements EMIStrategy:
+    apr
+    function CalculateEMI(principal, tenureMonths):
+        r = apr / 12
+        factor = (1 + r) ^ tenureMonths
+        monthly = principal * r * factor / (factor - 1)
+        total = monthly * tenureMonths
+        return EMIPlan(monthly, total, interest=total - principal, tenureMonths)
+
+class NoCostEMI implements EMIStrategy:
+    function CalculateEMI(principal, tenureMonths):
+        monthly = principal / tenureMonths
+        return EMIPlan(monthly, total=principal, interest=0, tenureMonths)
+
+
+function ConvertToEMI(card, tx, strategy, tenureMonths):
+    lock(card.mutex)
+
+    if tx.type != PURCHASE:
+        unlock(card.mutex)
+        return error(NOT_A_PURCHASE)
+    if tx.isConvertedToEMI:
+        unlock(card.mutex)
+        return error(ALREADY_CONVERTED)
+
+    plan = strategy.CalculateEMI(tx.amount, tenureMonths)
+    card.outstandingBalance -= tx.amount  // carve out of revolving balance
+
+    conversion = new EMIConversion(tx.id, strategy.type, tx.amount,
+                                     tenureMonths, plan.monthlyAmount,
+                                     remainingInstallments=tenureMonths)
+    card.emiConversions.add(conversion)
+    tx.isConvertedToEMI = true
+
+    unlock(card.mutex)
+    return conversion
