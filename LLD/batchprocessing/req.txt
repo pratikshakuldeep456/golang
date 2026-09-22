@@ -1,0 +1,39 @@
+Requirements
+
+Process a batch of items.
+Multiple processing steps.
+Different batch types can have different processing logic.
+Easy to add new processing types/steps.
+Clean, modular, extensible design.
+Thread-safe/concurrent processing if asked.
+
+
+Requirements → Entities → Design patterns → 
+Interfaces/signatures → Design relationship → Code → Edge cases/concurrency
+
+batch - id, type, item list
+process - independet/sequential - indppeedennt  n sequenial both
+Does each type have its own processing logic - yes
+If a step fails, should we stop processing that item- >
+  -> we should (If a step fails, should we retry the step, or mark that item as failed immediately?)
+  ->Should retries have a fixed limit?" 
+
+
+Entities
+batch -> id, type(payment,order, signup) , []items
+item -> id, data, status
+ProcessingStep
+ → one processing operation
+ProcessingStrategy
+ → business logic for a batch type
+BatchProcessor
+     |
+     |-- gets Batch
+     |
+     |-- finds correct Strategy
+     |
+     |-- runs processing steps
+     |
+     |-- handles errors
+     |
+     └-- returns result
