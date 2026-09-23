@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"pratikshakuldeep456/golang/LLD/cache"
+	"pratikshakuldeep456/golang/LLD/batchprocessing"
 )
 
 func Counter() func() int {
@@ -126,5 +126,6 @@ func main() {
 	//ridesharingsystem.RSTest()
 	//bookmyshow.TestBMS()
 	//asyncworker.AsyncWorker()
-	cache.CacheTest()
+	//cache.CacheTest()
+	batchprocessing.TestBatchProcessor()
 }

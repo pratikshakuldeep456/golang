@@ -22,6 +22,12 @@ type Item struct {
 	Status ItemStatus
 }
 
+//	type Item struct {
+//		ID     string
+//		Type   BatchType   // 👈 NEW — type now lives per-item, not just per-batch
+//		Data   map[string]interface{}
+//		Status Status
+//	}
 type Batch struct {
 	ID    string
 	Type  BatchType

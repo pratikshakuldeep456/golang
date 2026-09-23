@@ -47,14 +47,14 @@ type ChainStep struct {
 	next *ChainStep
 }
 
-func (c *ChainStep) Execute(item *Item) error {
+func (c *ChainStep) ExecuteChain(item *Item) error {
 
 	if err := c.step.Execute(item); err != nil {
 		return err
 	}
 
 	if c.next != nil {
-		return c.next.Execute(item)
+		return c.next.ExecuteChain(item)
 	}
 
 	return nil
@@ -127,6 +127,14 @@ func (f *StrategyFactory) GetStrategy(
 // ====================
 // Batch Processor
 // ====================
+/*BatchProcessor is the orchestrator —
+the "brain" that owns and coordinates
+the two patterns you just went through
+(Factory + Chain of Responsibility).
+It doesn't do any actual
+validation/transformation/business-logic itself
+ — it just holds references to the things that do,
+ and calls them in the right order.*/
 
 type BatchProcessor struct {
 	factory *StrategyFactory
@@ -191,16 +199,23 @@ func (p *BatchProcessor) Process(batch *Batch) error {
 	return nil
 } */
 
-func (p *BatchProcessor) Process(batch *Batch) error {
+func (p *BatchProcessor) BatchProcess(batch *Batch) error {
 
+	//re out which business logic applies to
+	// this whole batch (e.g., is this an Order batch or a Payment batch?).
 	strategy := p.factory.GetStrategy(batch.Type)
 	if strategy == nil {
 		return fmt.Errorf("unsupported batch type: %s", batch.Type)
 	}
 	for _, item := range batch.Items {
-
+		//   strategy := p.factory.GetStrategy(batch.Type)
+		// 	if strategy == nil {
+		// 		return fmt.Errorf("unsupported batch type: %s", batch.Type)
+		// 	}
 		// First execute common processing steps
-		if err := p.chain.Execute(item); err != nil {
+		//Run this one item through the Chain of Responsibility
+		// (Validation → Transformation → Persistence).
+		if err := p.chain.ExecuteChain(item); err != nil {
 			item.Status = Failed
 			fmt.Println("Item failed:", item.ID)
 			continue

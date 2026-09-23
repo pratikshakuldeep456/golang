@@ -1,0 +1,38 @@
+
+
+->>>type ProcessingStep interface -> this is contact basically its tells 
+anything which wants to call a processing step they must impleent
+execute step which tells if we 
+can excelute or we are getting error so can stop
+
+->>>>>> 
+ValidationStep     → has Execute(item) error   ✅ satisfies the rule
+TransformationStep → has Execute(item) error   ✅ satisfies the rule
+PersistenceStep    → has Execute(item) error   ✅ satisfies the rule
+3 real workers, each of whom knows how to do ONE job (validate, transform, save) 
+and each can be called via .Execute(item).
+
+------>>>>
+why does ChainStep ALSO implement Execute?
+type ChainStep struct {
+	step ProcessingStep   // 👈 holds ONE of the workers above
+	next *ChainStep    // 👈 holds a pointer to NEXT ChainStep(or nil)
+}
+
+func (c *ChainStep) Execute -> 
+You only ever call .Execute() on the first box. You never manually call box 2 or box 3 yourself. The magic is that box 1's Execute calls
+ box 2's Execute, which calls box 3's Execute
+  — like dominoes falling.
+  Because without the wrapper, you'd have to write this manually every time:
+  With ChainStep, you build the order once, then just call one line, forever:
+
+go
+validation.next = transformation
+transformation.next = persistence
+
+validation.Execute(item)
+
+ProcessingStep = the interface / rulebook ("must have Execute")
+ValidationStep, TransformationStep, PersistenceStep = the actual workers who follow that rulebook
+ChainStep = a box/node that holds one worker + a pointer to the next box, and its own Execute is really just "run my worker, 
+then forward the request to the next box"
