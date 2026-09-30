@@ -37,3 +37,183 @@ BatchProcessor
      |-- handles errors
      |
      └-- returns result
+
+Client
+  ↓
+Batch Service
+  ↓
+Create Batch
+  ↓
+Split batch into items/jobs
+  ↓
+Queue
+  ↓
+Workers / Consumers
+  ↓
+Validate
+  ↓
+Transform
+  ↓
+Persist
+  ↓
+Business-specific logic
+  ↓
+Success
+  ↓
+ACK message
+
+
+INSERT INTO idempotency_records
+    (batch_id, item_id, status)
+VALUES
+    ('B101', 'I500', 'PROCESSING')
+ON CONFLICT (batch_id, item_id) DO NOTHING;
+
+Worker pool / consumers + queue.
+Increase throughput and reduce total processing time.
+Idempotency key + unique DB constraint/atomic insert.
+Message is redelivered; idempotency prevents the business operation from executing twice.
+Depends on the requirement: optimistic locking, row-level locking, atomic updates, or idempotent writes.
+How do you handle race conditions?
+Identify shared state and protect it using DB constraints/transactions, locks, or atomic operations.
+How do you make the processing thread-safe?
+Avoid shared mutable state; use isolated worker state and concurrency-safe access to shared resources.
+
+How do you maintain ordering?
+Route related items to the same partition/consumer or serialize processing for that key.
+How do you know when the entire batch is complete?
+
+Track total, successful, failed, and pending items atomically; 
+mark the batch complete when all items reach a terminal state.
+
+I would make the operation idempotent. The item would have a stable idempotency key, and the database would enforce uniqueness. Workers would atomically claim the item using an insert or conditional update. Only one worker succeeds;
+ the other detects the duplicate and doesn't execute the business operation."
+
+Architecture → Worker/Consumer → Queue → Concurrency → Idempotency → ACK → Retry → DLQ → Ordering → Backpressure 
+  → Scaling → Batch completion → Failure handling 
+  → Observability → Graceful shutdown → Queue vs synchronous processing.
+
+But adding consumers doesn't give infinite scaling
+
+Eventually another component becomes the bottleneck.
+
+1. Database
+100 workers
+     ↓
+Database
+     ↓
+Too many queries/connections
+
+The DB may hit:
+
+CPU limit
+I/O limit
+connection limit
+lock contention
+
+Then adding more consumers actually makes things worse.
+
+CPU / query processing bottleneck → optimize DB
+
+First check:
+
+slow queries
+missing indexes
+inefficient joins
+excessive writes
+lock contention
+
+For example:
+
+100 workers
+    ↓
+DB
+    ↓
+Slow query
+
+Adding more workers just creates more concurrent slow queries.
+
+Optimize the queries/indexes first.
+
+Too many writes → batch/bulk operations
+
+Instead of:
+
+Worker 1 → INSERT
+Worker 2 → INSERT
+Worker 3 → INSERT
+...
+
+you may batch writes where the business operation allows it:
+
+Workers
+   ↓
+Buffer
+   ↓
+Bulk INSERT
+   ↓
+DB
+
+. Still don't just keep adding workers
+
+Suppose your DB can safely handle:
+
+2,000 operations/sec
+
+and you currently have:
+
+10 workers → 1,000 ops/sec
+
+You might increase to:
+
+15 workers → 1,500 ops/sec
+20 workers → 2,000 ops/sec
+
+Beyond that:
+
+50 workers → DB overloaded
+
+So you put a concurrency limit/backpressure around the DB rather than blindly adding workers.
+
+Interview answer
+
+"If the database becomes the bottleneck, I first identify whether it's connections, query performance, CPU, I/O, or locks. For connection pressure, I'd use connection pooling such as PgBouncer. For query bottlenecks, I'd optimize queries and indexes. For read-heavy workloads, I'd consider read replicas, and for genuinely higher capacity requirements, vertical scaling, partitioning or sharding depending on the workload. I'd also control worker concurrency so consumers don't overwhelm the database."
+
+The key distinction:
+
+PgBouncer → solves connection management.
+Query/index optimization → solves inefficient DB work.
+Scaling DB → increases actual DB capacity.
+Backpressure/concurrency limits → prevents workers from overwhelming it.
+
+Backpressure means slowing down the 
+producer/processing rate when the 
+downstream system cannot handle the current load.
+
+this batch-processing problem, 
+I'd choose RabbitMQ if the requirement 
+is a job-processing queue where workers consume individual
+items and acknowledge them after successful processing.s
+
+Why not Kafka?
+
+Kafka can absolutely solve this, especially if:
+
+batch volume is extremely high
+you need very high throughput
+you need event replay
+you need multiple independent consumers of the same events
+ordering/partitioning is important
+
+But for a straightforward "job → worker → process → ACK" model, RabbitMQ maps more naturally to the problem.
+
+
+For this particular problem,
+ I'd choose RabbitMQ because this is primarily a task-processing workload 
+ rather than an event-streaming workload.
+  We need reliable delivery, acknowledgements, retries, DLQ,
+   and controlled consumer concurrency. 
+   If the system required very high throughput, 
+   event replay, or multiple independent consumers, 
+   I'd consider Kafka. If we're on AWS and want a fully managed queue,
+    SQS would also be a strong option.

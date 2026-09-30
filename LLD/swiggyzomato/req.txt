@@ -1,0 +1,156 @@
+Functional requirements
+User can search restaurants.
+User can view a restaurant's menu.
+User can add/remove items from cart.
+User can checkout.
+Checkout calls a third-party payment provider.
+On successful payment, create the order and move it to ORDER_PLACED.
+Assign an available delivery executive dynamically.
+Maintain the order lifecycle:
+
+ORDER_PLACED
+      ↓
+PREPARING
+      ↓
+READY_FOR_PICKUP
+      ↓
+OUT_FOR_DELIVERY
+      ↓
+DELIVERED
+
+
+Explicitly in scope
+Restaurant → Menu → Cart → Checkout
+→ Payment → Order → Delivery Assignment
+→ Order State Transitions → Events/Notifications
+
+
+Core data structures
+Since this is an in-memory LLD:
+restaurants   → map[RestaurantID]*Restaurant
+menuItems     → map[MenuItemID]*MenuItem
+carts         → map[UserID]*Cart
+orders        → map[OrderID]*Order
+executives    → map[ExecutiveID]*DeliveryExecutive
+
+For Cart:
+items → map[MenuItemID]*CartItem
+
+
+Now ask: where can behavior change?
+
+Payment
+
+Different providers:
+
+PaymentProvider
+    ├── Razorpay
+    └── Stripe
+
+So:
+
+type PaymentProvider interface {
+    Pay(orderID string, amount float64) error
+}
+
+This is essentially Strategy + Adapter because we're hiding third-party provider APIs behind our interface.
+
+
+
+Different ways of selecting an executive:
+
+AssignmentStrategy
+    ├── NearestExecutive
+    └── LeastBusyExecutive
+
+
+Order lifecycle
+
+This is where State pattern makes sense:
+
+ORDER_PLACED
+      ↓
+PREPARING
+      ↓
+READY_FOR_PICKUP
+      ↓
+OUT_FOR_DELIVERY
+      ↓
+DELIVERED
+
+
+type OrderState interface {
+    Prepare(order *Order) error
+    MarkReady(order *Order) error
+    Dispatch(order *Order) error
+    Deliver(order *Order) error
+}
+
+
+Entities
+User
+Restaurant
+MenuItem
+Cart
+CartItem
+Order
+OrderItem
+Payment
+DeliveryExecutive
+
+
+. Data structures
+restaurants  → HashMap<RestaurantID, Restaurant>
+menuItems    → HashMap<MenuItemID, MenuItem>
+carts        → HashMap<UserID, Cart>
+orders       → HashMap<OrderID, Order>
+executives   → HashMap<ExecutiveID, DeliveryExecutive>
+
+Cart.items   → HashMap<MenuItemID, CartItem>
+Order.items  → List<OrderItem>
+
+Explain only why:
+
+“I'm using HashMap because most operations are lookup by ID 
+and I want O(1) average lookup. 
+Cart uses a map because we frequently add/update/remove items.”
+
+
+Design patterns
+
+Only patterns justified by requirements:
+
+Order lifecycle
+→ State Pattern
+
+Delivery assignment
+→ Strategy Pattern
+
+Payment providers
+→ Strategy
+
+State-change notifications
+→ Observer / Event Publisher
+
+
+apis -> 
+searchRestaurant(name)
+getMenu(restaurantID)
+addToCart(userID, menuItemID, quantity)
+removeFromCart(userID, menuItemID)
+checkout(userID)
+processPayment(orderID)
+assignDeliveryExecutive(orderID)
+updateOrderState(orderID, state)
+getOrder(orderID)
+getOrderHistory(userID)
+
+
+Finally interviewer-driven edge cases->
+Concurrent checkout
+Double checkout
+Payment succeeds but response is lost
+Duplicate event
+Two orders trying to get same delivery executive
+Invalid state transition
+Notification failure

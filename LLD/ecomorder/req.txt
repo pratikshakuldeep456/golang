@@ -1,0 +1,142 @@
+package ecomcart
+
+/* Design an e-commerce cart and purchase-limit
+system where users can add products to their cart and place orders,
+ while the system must enforce transactional purchase limits.*/
+
+
+users can 
+Add product to cart
+Update quantity
+Remove product
+View cart
+Checkout
+
+do we have purchange limit og qunantity? 
+ depends on the rproducts..
+
+
+so our req is 
+One store — we don't need multi-vendor/store handling.
+Store has inventory for each product.
+Each product can have its own purchase quantity limit oon each order.
+Example: iPhone → max 2/user
+Shirt → max 10/user
+Some products → no limit.
+Purchase limit is per user per product.
+The limit applies to total purchased quantity + current cart quantity.
+Inventory is also checked during cart/checkout.
+Checkout must be atomic — either the complete order succeeds or nothing changes.
+Multiple users can purchase the same product concurrently.
+We need to prevent a user from exceeding the product's limit due to concurrent checkout requests.
+
+
+purchase limit per order + inventory concurrency + atomic checkout.
+
+limit cz of Fair distribution during flash sales, during pomootions
+incventroy protection when quantntiy is low
+
+
+User
+Product
+Inventory
+Cart
+CartItem
+Order
+OrderItem
+
+
+
+User
+ └── Cart
+      └── CartItems
+            └── Product
+
+User
+ └── Orders
+       └── OrderItems
+             └── Product
+
+Product
+ └── Inventory
+
+ type Product struct {
+    ID                string
+    Name              string
+    Price             float64
+    MaxPerOrder       int // 0 = no limit
+}
+
+type Inventory struct {
+    ProductID string
+    Quantity  int
+}
+
+type Cart struct {
+    ID      string
+    UserID  string
+    Items   []CartItem
+}
+
+type CartItem struct {
+    ProductID string
+    Quantity  int
+}
+
+type Order struct {
+    ID     string
+    UserID string
+    Items  []OrderItem
+    Total  float64
+    Status OrderStatus
+}
+
+type OrderItem struct {
+    ProductID string
+    Quantity  int
+    Price    float64
+}
+
+User
+ ├── 1 Cart
+ │     └── N CartItems ──► Product
+ │
+ └── N Orders
+        └── N OrderItems ──► Product
+
+Product ── 1:1 ── Inventory
+
+
+
+type Cart struct {
+    ID     string
+    UserID string
+    Items  map[string]*CartItem // productID -> item
+}
+
+type CartItem struct {
+    ProductID string
+    Quantity  int
+}
+
+type Inventory struct {
+    ProductID string
+    Quantity  int
+}
+
+
+Solution: DB transaction + row-level locking
+
+At checkout:
+
+BEGIN;
+
+SELECT quantity
+FROM inventory
+WHERE product_id = ?
+FOR UPDATE;
+
+FOR UPDATE locks that inventory row.
+
+
+//here we can use shared lock

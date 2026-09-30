@@ -49,33 +49,40 @@ Quick recap of where we are: you've restated requirements,
 
 
 
+OrderStatus:
+PENDING
+PLACED
+PREPARING
+READY
+OUT_FOR_DELIVERY
+DELIVERED
+CANCELLED
+
+PaymentStatus:
+PENDING
+SUCCESS
+FAILED
+
+DeliveryStatus:
+AVAILABLE
+ASSIGNED
+ON_DELIVERY
+
+apis-> 
+searchRestaurant(name)
+
+getMenu(restaurantID)
+
+addToCart(userID, menuItemID, quantity)
+
+checkout(userID)
+
+processPayment(orderID)
+
+updateOrderStatus(orderID, status)
+
+assignDelivery(orderID)
+
+getOrderHistory(userID)
 
 
-
-Search restaurants by name, exact match. 
-Get menu by restaurant ID, checks restaurant exists first.
- Add to cart, validates quantity, price from backend not client,
-  rejects cross-restaurant items. Checkout takes user ID and address, creates order as pending, snapshots cart items. Payment processes against that order ID, updates order status to placed or failed. Notification fires after, non-blocking, never breaks checkout.
-
-edge cases- >
-
-Edge cases you raised:
-
-Out-of-stock / infinite-quantity item ambiguity
-Concurrent users ordering the last unit of a limited-stock item
-Delivery status scope creep (on the way/delivered leaking into Order when delivery is out of scope) — caught and fixed
-Payment third-party scope (not implementing card/UPI logic yourself)
-Payment success vs. failure branching order status
-
-Edge cases you didn't mention — worth having ready:
-
-Cart spans two restaurants — user adds item from Restaurant A, then tries adding from Restaurant B. Reject, or auto-clear and start fresh? (You actually handled this in code earlier — just wasn't said out loud here.)
-Empty cart at checkout — must reject before even reaching payment.
-Payment succeeds but the order-save fails right after (partial failure / crash mid-write) — money charged, no order recorded. Real systems handle this with idempotency keys + reconciliation; you don't need to build it, but naming it shows depth.
-Price changes between add-to-cart and checkout — restaurant updates a price while item sits in someone's cart. Snapshot price at add-time (you did this) vs. re-price at checkout — say which and why.
-Menu item deleted/marked unavailable while it's sitting in someone's cart.
-Double-checkout / double-click — user hits "Pay" twice, two orders created for one cart. Needs idempotency (disable button client-side isn't enough — server should guard too).
-Duplicate/rapid add-to-cart of the same item — increment quantity vs. create duplicate line item (you handled this correctly in code — merge by menuItemID).
-User has no address / invalid address at checkout (relevant if delivery type exists even though fulfillment itself is out of scope).
-Restaurant closed / outside operating hours — can orders even be placed?
-Notification failure — payment + order succeed but the notify call fails. Should that fail the whole checkout? (No — it shouldn't block the critical path; fire-and-forget or retry-async.)

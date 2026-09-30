@@ -1,0 +1,362 @@
+The Airport Scheduler (single runway) problem is basically an LLD/concurrency problem 
+where you need to schedule flights that all want to use one shared runway. 
+
+
+We have a single runway,
+and multiple flights can request landing or takeoff.
+The scheduler should assign the runway without overlapping schedules
+
+Flight has LANDING or TAKEOFF.
+Each operation takes some duration.
+Flights can have a requested/preferred time.
+Only one flight can occupy the runway at a time.
+Need to handle cancellations/rescheduling.
+Assume emergency flights can have higher priority if required.
+Initially assume in-memory system; persistence/concurrency can be discussed separately.
+
+re we scheduling flights only for the current day, or do we need to accept schedules for future days?"
+
+For a simple version, I'd assume one day / 24-hour scheduling horizon.
+
+Today
+00:00 ───────────────────── 23:59
+       runway schedule
+
+
+entities ->
+flight
+runway
+slots
+Scheduler
+
+
+Runway
+------
+status:
+  AVAILABLE
+  OCCUPIED
+
+isAvailable = true/false
+
+Flight status
+A flight can have:
+WAITING
+ASSIGNED
+IN_PROGRESS
+COMPLETED
+CANCELLED
+
+
+1. Define the Flight
+Flight
+------
+id
+type              // LANDING / TAKEOFF
+requestedTime
+duration
+priority
+status
+
+Define TimeSlot
+
+This is important because the main constraint is no overlapping runway usage.
+
+TimeSlot
+--------
+startTime
+endTime
+flightId
+
+Define Runway
+
+The runway owns its availability/reservations.
+
+Runway
+------
+id
+status
+slots
+
+
+Responsibilities:
+
+isAvailable(time)
+reserve(slot)
+release(slot)
+
+
+Define SchedulingStrategy
+This decides which waiting flight should be scheduled next.
+
+SchedulingStrategy
+        │
+        ├── FCFSStrategy
+        ├── PriorityStrategy
+        └── EmergencyFirstStrategy
+--------------------------------------------
+Define AirportScheduler
+This is the main orchestrator.
+AirportScheduler
+      │
+      ├── Runway
+      └── SchedulingStrategy
+----------------
+scheduleFlight()
+cancelFlight()
+rescheduleFlight()
+getSchedule()
+
+Emergency flights get priority when selecting the next flight,
+ but we don't preempt an already assigned/in-progress flight.
+  We assign the emergency the earliest available slot.
+
+  preemption + cascade rescheduling as an extension.
+
+Concurrency
+This entire operation must be atomic:
+
+Find slot
+   ↓
+Reserve slot
+
+If multiple requests can arrive concurrently, the scheduler protects the critical section:
+
+scheduleFlight()
+    ↓
+[lock]
+    ↓
+find available slot
+    ↓
+reserve slot
+    ↓
+[unlock]
+
+That's enough for the LLD.
+
+Class diagram
+
+I'd design it like this:
+
+                    AirportScheduler
+                           │
+             ┌─────────────┴─────────────┐
+             │                           │
+             ▼                           ▼
+       SchedulingStrategy             Runway
+             │                           │
+      ┌──────┴──────┐                    │
+      ▼             ▼                    ▼
+  FCFSStrategy  PriorityStrategy      TimeSlots
+
+Flight
+------
+id
+type
+requestedTime
+duration
+priority
+status
+
+TimeSlot
+--------
+startTime
+endTime
+flight
+
+Runway
+------
+id
+status
+slots
+
++ isAvailable()
++ findAvailableSlot()
++ reserveSlot()
++ releaseSlot()
+
+SchedulingStrategy
+SchedulingStrategy
+------------------
++ selectNextFlight(flights)
+
+Implementations:
+
+FCFSStrategy
+PriorityStrategy
+
+
+
+AirportScheduler
+AirportScheduler
+---------------
+runway
+strategy
+
++ scheduleFlight()
++ cancelFlight()
++ rescheduleFlight()
++ getSchedule()
+
+
+Main responsibility
+The important separation is:
+AirportScheduler
+    → coordinates everything
+
+SchedulingStrategy
+    → decides WHICH flight gets priority
+
+Runway
+    → manages the shared runway resource
+
+TimeSlot
+    → represents WHEN the runway is reserved
+
+Flight
+    → represents the flight itself
+
+in distributed system may have multiple scheduler instances,
+
+Both see:
+
+10:00–10:10 → occupied
+10:10–10:20 → available
+
+Both try to reserve:
+
+A → 10:10–10:20
+B → 10:10–10:20
+
+❌ That's the distributed race condition.
+
+Solution
+
+The database becomes the source of truth for runway reservations.
+
+
+ou need an atomic reservation mechanism:
+
+Scheduler 1
+    │
+    ├── Find slot
+    │
+    └── Reserve atomically
+              │
+              ▼
+             DB
+              ▲
+              │
+    ┌─────────┘
+    │
+Scheduler 2
+
+Only one scheduler can successfully reserve the slot.
+
+You can use a transaction:
+
+BEGIN;
+
+-- Lock the relevant schedule/resource
+SELECT *
+FROM runway_slots
+WHERE runway_id = 'R1'
+ORDER BY start_time
+FOR UPDATE;
+
+-- Check whether 10:10–10:20 is free
+
+-- If free:
+INSERT INTO runway_slots
+    (runway_id, start_time, end_time, flight_id)
+VALUES
+    ('R1', '10:10', '10:20', 'F2');
+
+COMMIT;
+
+BEGIN
+  ↓
+Lock relevant data
+  ↓
+Check availability
+  ↓
+Reserve slot
+  ↓
+COMMIT
+
+
+1. What if two flights request the same slot?
+A → 10:00
+B → 10:00
+
+The scheduler's policy decides which gets it:
+
+Priority
+   ↓
+Emergency
+   ↓
+FCFS
+
+
+What if the system receives 10,000 requests/sec?
+
+The runway itself is the natural bottleneck because:
+
+There is only one runway.
+You can horizontally scale the API/scheduler instances:
+
+          Load Balancer
+        /      |       \
+      S1       S2       S3
+       \       |       /
+          Schedule DB
+               ↓
+          Single Runway
+
+But you cannot make runway allocation itself arbitrarily parallel.
+
+You can optimize slot lookup and queue requests, but ultimately reservations for one runway need serialized consistency.
+
+. Would you use a queue?
+
+Possible architecture:
+
+Client
+  ↓
+API
+  ↓
+Queue
+  ↓
+Scheduler Consumers
+  ↓
+Schedule DB
+
+This is useful if scheduling requests can be asynchronous.
+
+But if the client expects:
+
+"Give me my runway slot immediately."
+
+then synchronous scheduling with a transactional DB may be simpler.
+
+unway schedule, you'd generally prioritize consistency over serving potentially stale availability information.
+
+idempotency_records
+-------------------
+request_id UNIQUE
+flight_id
+operation
+response
+status
+
+
+Yes. Multiple runways is the most natural twist an interviewer can add
+Multiple runways
+
+Now:
+
+Scheduler
+   ↓
+RunwaySelectionStrategy
+   ↓
+┌─────────┬─────────┬─────────┐
+Runway 1  Runway 2  Runway 3

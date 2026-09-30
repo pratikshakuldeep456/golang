@@ -1,0 +1,107 @@
+Create accounts and check balances.
+Transfer money from account A to account B.
+Every transfer has a status and a unique ID.
+Keep a transaction history (ledger) per account.
+Reverse a completed transfer.
+
+
+Never lose or create money: debit and credit succeed together or not at all.
+Idempotent: a retried request (timeout, double tap) must not transfer twice.
+Thread-safe: concurrent transfers must not overspend.
+Auditable: every money movement is recorded, and records are never edited.
+Extensible: new rules, such as limits or fraud checks, can be added without touching the core.
+
+
+Single currency, with amounts stored as int64 in paise (never floats).
+In-memory for the LLD, with a DB when we move to HLD.
+Same-bank, instant transfers.
+A daily transfer limit per account.
+
+
+Entities
+Account: ID, holder, balance, status (ACTIVE or FROZEN), daily limit, and its own mutex.
+Transfer: ID, idempotency key, from, to, amount, status (INITIATED, COMPLETED, FAILED, REVERSED), failure reason, timestamps.
+LedgerEntry: ID, transfer ID, account ID, type (DEBIT or CREDIT), amount, balance after, timestamp.
+TransferService: the orchestrator that validates, locks, moves the money and records it.
+Rule (interface): one validation, such as sufficient balance, account active, or within daily limit.
+
+edge 
+Invalid input: amount ≤ 0, transferring to the same account, or an account that doesn't exist.
+Insufficient balance, frozen account, or daily limit exceeded.
+Deadlock: A→B and B→A at the same time, each holding one lock. Always lock accounts in ID order.
+Ledger invariant: debits equal credits, so the total of all balances never changes.
+
+
+Chain of Responsibility (or Strategy): a list of Rule objects (active, balance, limit). Adding a rule means adding one struct.
+State: a transfer moves only through allowed transitions (INITIATED → COMPLETED or FAILED, COMPLETED → REVERSED). Anything else returns an error.
+Double-entry ledger: every transfer writes a debit and a credit entry, so money is traceable and reconcilable.
+Idempotency key store: the standard defense against retries.
+Repository: hides where accounts and transfers are stored, so swapping in a DB is easy.
+Observer: notifications and audit subscribers run after the transfer commits.
+
+
+In memory I use per-account mutexes in ID order. In production I use a DB transaction with SELECT ... FOR UPDATE ordered by account ID, which is the same idea and works across servers."
+
+
+
+
+cross ques->
+
+## A. Cross-questions on our LLD
+
+| Question | Answer |
+|---|---|
+| Why lock both accounts for the whole check-and-move? | Otherwise two transfers can both pass the balance check and both debit (double spend). The check and the change must be one atomic step. |
+| How do you avoid deadlock? | Always lock the lower account ID first, so A→B and B→A take locks in the same order and no cycle forms. |
+| Two identical requests arrive at the same instant. | The key check and insert happen under one lock. The second request waits for the first and returns its result, so money moves once. |
+| Same key, different amount? | Rejected with `ErrKeyConflict`, because it's a client bug, not a retry. |
+| A retry of a failed transfer (insufficient funds) with the same key? | It returns the same failure. The client must use a new key for a new attempt. Say this is deliberate: a key identifies one intent. |
+| Why `int64` paise? | Floats can't represent money exactly. Integers make arithmetic exact. |
+| Why is the ledger append-only? | It's an audit trail. Corrections are new entries (a reversal is a new debit and credit), never edits. |
+| Does reversal lower the daily limit usage? | No, by design. It's a product decision, so ask. |
+| What breaks if the process crashes mid-transfer? | In memory, everything is lost. That's why production uses a DB transaction, so the debit and credit are all-or-nothing. |
+| How would you add a fraud check? | Write a new `Rule` and call `AddRule`. No core change. |
+| What are the weaknesses of this code? | The idempotency map grows forever (needs a TTL or storage in the DB), the daily limit uses the server's timezone (should be fixed to IST), and it only works in one process. |
+| Why not one global mutex? | It serializes all transfers. Per-account locks let unrelated transfers run in parallel. |
+
+## B. HLD and distributed cross-questions
+
+**Correctness**
+
+| Question | Answer |
+|---|---|
+| How do you make debit and credit atomic across servers? | Keep both accounts in one database and use a single transaction with `SELECT ... FOR UPDATE` in ID order, or a conditional update (`WHERE balance >= amt`). |
+| Client times out. Did the transfer happen? | Unknown, which is why the idempotency key exists. The client retries with the same key and gets the original result. |
+| Where do you store idempotency keys? | A table with a unique constraint on the key, inserted inside the same transaction as the transfer. Add a TTL (say 24 hours to a few days) for cleanup. |
+| Isolation level? | Read Committed plus row locks or conditional updates is enough. Serializable is safer but costs retries and throughput. |
+| Exactly-once? | Not possible in a network. You get at-least-once delivery plus idempotent processing, which behaves as exactly-once. |
+| Money leaves this DB (external bank)? | Use a saga: a PENDING state, call the external system with its own idempotency key, then COMPLETE or compensate. Never hold a DB transaction open across a network call. |
+| Debit succeeded but credit failed in a saga? | Compensate: refund the debit through a new ledger entry, and keep retrying the compensation until it succeeds. |
+| 2PC or saga? | 2PC blocks and is fragile if the coordinator dies. Sagas with idempotent steps and compensation are standard, and money movement stays visible as PENDING states. |
+
+**Scale**
+
+| Question | Answer |
+|---|---|
+| Accounts are on different DB shards. | Shard by account ID. A cross-shard transfer is a saga: debit on shard 1 into a holding account, credit on shard 2, then release. Prefer designs that keep most transfers on one shard. |
+| A hot account (a merchant getting thousands of credits per second). | Its row becomes a bottleneck. Options: batch credits, split the balance into sub-accounts, or apply credits from a queue by a single writer. Credits can be recorded as ledger entries with balance computed asynchronously. |
+| How do you scale reads (balance checks, statements)? | Read replicas for statements, with the caveat of replication lag. Use the primary for anything used in a decision, such as the balance check inside a transfer. |
+| How do you generate unique transfer IDs across servers? | UUIDs or ULIDs (or a snowflake-style ID), not a shared counter. |
+| Where do you use a queue? | For non-critical follow-ups: notifications, statements, analytics, via an outbox so an event is never lost. The transfer itself stays synchronous or a clear saga. |
+
+**Reliability and operations**
+
+| Question | Answer |
+|---|---|
+| A message or event is lost after commit. | Use the **outbox pattern**: write the event row in the same transaction, and a relay publishes it at least once. Consumers dedupe by event ID. |
+| How do you detect money bugs? | **Reconciliation**: a job checks that the sum of ledger entries equals balances, debits equal credits, and stuck INITIATED or PENDING transfers are flagged. |
+| A transfer is stuck in INITIATED after a crash. | A recovery job scans transfers older than a threshold and resolves them: complete them if the ledger entries exist, or mark them FAILED. |
+| CP or AP? | CP. For money, refuse or delay rather than show inconsistent balances. |
+| Disaster recovery? | Synchronous replication to a standby in another zone (RPO near zero), regular backups, and tested failover. |
+| Rate limiting and fraud? | Per-account and per-device limits at the API layer, plus a risk service the transfer flow can call before committing. |
+| Audit and compliance? | Immutable, append-only ledger, access logs, and no updates or deletes on financial rows. Corrections are new entries. |
+| Retries from clients. | Exponential backoff with jitter, always with the same idempotency key. |
+| Multi-currency? | Store amount and currency, use exchange-rate snapshots on the transfer, and keep a separate ledger per currency with FX entries. |
+| Event sourcing instead of balance updates? | Balance becomes a fold over ledger entries. You get a perfect audit trail, but you need snapshots for speed. It's an option, not a requirement. |
+
+**Best habits:** name the trade-off in every answer, and when the interviewer changes the scenario ("what if these accounts are on different shards?"), say what breaks first and what pattern fixes it. If you don't know something, say what you'd check rather than guessing.

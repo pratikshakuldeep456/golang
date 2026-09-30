@@ -1,0 +1,42 @@
+In production
+
+You normally don't implement the state machine yourself. Use a library or infrastructure component.
+
+In Go, for example, a service might have:
+
+cb := circuitbreaker.New(...)
+
+func (g *ExchangeGateway) PlaceOrder(order *Order) error {
+    return cb.Execute(func() error {
+        return g.client.PlaceOrder(order)
+    })
+}
+
+The exact library depends on the company's stack.
+
+Circuit breaker doesn't mean we can safely retry orders.
+
+Suppose:
+
+Broker → Exchange
+         ↓
+    order accepted
+         ↓
+    response lost
+
+Our circuit breaker sees a failure.
+
+We cannot simply retry the order, because that could create a duplicate trade.
+
+So:
+
+Circuit breaker
+     ↓
+protects our system from unhealthy exchange
+     
+Reconciliation
+     ↓
+determines actual order state
+
+These solve different problems.
+

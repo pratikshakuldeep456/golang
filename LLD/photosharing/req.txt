@@ -1,0 +1,125 @@
+
+instagram ->
+for photosharing
+
+user-> create profile
+ follow,unfollow view follower following
+ view feeds from friends in cronoloigical time order
+ create post 
+  tag followers
+   tageed user can view post in their profile
+
+
+Can I tag any user or only users I follow? Can multiple users be tagged? - yes
+Should I handle likes/comments/notifications, or are they out of scope? -- out
+
+One photo per post or multiple photos? - one
+
+
+User
+Post
+Follow
+Tag
+Feed
+
+Relationships:
+
+User 1 ──── * Post
+
+User * ──── * User
+       Follow
+
+Post * ──── * User
+        Tag
+
+UserService
+ ├── createUser()
+ ├── follow()
+ ├── unfollow()
+ └── getFollowers()/getFollowing()
+
+PostService
+ ├── createPost()
+ └── deletePost()
+
+TagService
+ ├── tagUsers()
+ └── getTaggedPosts()
+
+FeedService
+ └── getFeed()
+
+
+User
+type User struct {
+    ID          string
+    Name        string
+    Followers   map[string]bool
+    Following   map[string]bool
+}
+
+Post
+type Post struct {
+    ID        string
+    UserID    string
+    PhotoURL  string
+    CreatedAt time.Time
+}
+
+Tag
+type Post struct {
+    ID         string
+    UserID     string
+    PhotoURL   string
+    CreatedAt  time.Time
+    TaggedUserIDs map[string]bool
+}
+
+Global storage
+users map[string]*User
+posts map[string]*Post.  ->We frequently access users/posts by ID → O(1) average lookup.
+
+
+type UserService struct {
+    users map[string]*User
+}
+
+func (s *UserService) CreateUser(name string) *User
+func (s *UserService) Follow(userID, targetUserID string) error
+func (s *UserService) Unfollow(userID, targetUserID string) error
+func (s *UserService) GetFollowers(userID string) []*User
+func (s *UserService) GetFollowing(userID string) []*User
+
+
+type PostService struct {
+    posts map[string]*Post
+}
+
+func (s *PostService) CreatePost(
+    userID string,
+    photoURL string,
+    taggedUserIDs []string,
+) (*Post, error)
+
+func (s *PostService) DeletePost(
+    userID, postID string,
+) error
+
+
+type FeedService struct {
+    userService *UserService
+    postService *PostService
+}
+
+func (s *FeedService) GetFeed(
+    userID string,
+    limit int,
+    offset int,
+) ([]*Post, error)
+
+
+func (s *PostService) GetTaggedPosts(
+    userID string,
+) ([]*Post, error)
+
+

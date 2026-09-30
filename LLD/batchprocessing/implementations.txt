@@ -36,3 +36,104 @@ ProcessingStep = the interface / rulebook ("must have Execute")
 ValidationStep, TransformationStep, PersistenceStep = the actual workers who follow that rulebook
 ChainStep = a box/node that holds one worker + a pointer to the next box, and its own Execute is really just "run my worker, 
 then forward the request to the next box"
+
+Factory decides which strategy to use. 
+For example, if the batch type is ORDER, 
+it gives me OrderStrategy; for PAYMENT, 
+it gives me PaymentStrategy. This keeps object creation and selection out of the processor.
+
+Strategy encapsulates batch-specific business logic.
+ The BatchProcessor doesn't need to know how an order or 
+ payment is processed. It just calls strategy.Process()
+
+Chain of Responsibility handles the common processing pipeline that every item goes through
+ — validation, transformation, persistence, etc. 
+ Each step is independent, so I can add, remove, 
+ or reorder processing steps without changing the processor.
+
+ Factory → selects business strategy → Chain processes common steps → Strategy executes type-specific logic.
+
+
+
+Your current flow is:
+
+Batch
+  │
+  ▼
+BatchProcessor
+  │
+  ├── Factory → selects business strategy
+  │
+  └── Chain → Validation → Transformation → Persistence
+                         │
+                         ▼
+                 Strategy.Process()
+                         │
+                         ▼
+                    Success/Failed
+
+
+BatchProcessor is the orchestrator.
+Factory decides which business strategy applies to the batch,
+while Chain of Responsibility handles common processing steps.
+This keeps business-specific logic separate from common processing logic."
+
+       ▼
+          Create Batch
+                 │
+                 ▼
+          Message Queue
+          Kafka/RabbitMQ
+                 │
+       ┌─────────┼─────────┐
+       ▼         ▼         ▼
+   Worker 1  Worker 2  Worker 3
+       │         │         │
+       └─────────┼─────────┘
+                 ▼
+              Database
+
+Why queue?
+
+Suppose you receive:
+
+1,000,000 items
+
+If you process synchronously:
+
+API
+ │
+ └── process 1M items
+       │
+       └── request stays open
+
+Therefore your processing must be idempotent.
+
+For example:
+
+item_id = 123
+
+DB:
+processed_items
+----------------
+item_id UNIQUE
+
+Then:
+
+INSERT INTO processed_items(item_id)
+VALUES (123)
+ON CONFLICT DO NOTHING;
+
+Or use an idempotency key:
+
+batch_id + item_id
+
+
+                  Batch Manager
+                       │
+          ┌────────────┼────────────┐
+          ▼            ▼            ▼
+     Order Queue   Payment Queue  Customer Queue
+          │            │            │
+          ▼            ▼            ▼
+    Order Service  Payment Service Customer Service

@@ -1,0 +1,112 @@
+Design a Music Player that supports playing songs and managing a playback queue.
+
+User can add songs to the music player.
+User can create/manage a playlist.
+User can:
+Play
+Pause
+Resume
+Stop
+Next
+Previous
+
+Player should maintain the current song and playback position.
+Support different playback modes:-
+
+Sequential
+Shuffle
+Repeat 
+
+The player state must remain consistent when concurrent operations happen.
+
+What happens if Play() and Pause() are called concurrently?
+What happens if two threads call Next() simultaneously?
+Can two songs start playing at the same time?
+How do you protect the current song / queue?
+Where would you use mutex/locks?
+Can you hold a lock while doing the actual song playback?
+How would you avoid race conditions and deadlocks?
+
+player state, queue, playlist, playback modes, and concurrency,
+
+One player instance per user/device.
+Songs are already available; we don't design audio storage/streaming.
+Playlist can contain multiple songs.
+Play() starts/resumes the current song.
+Pause() pauses at the current position.
+Next() moves to the next song.
+Previous() moves to the previous song.
+Support Sequential, Shuffle, Repeat.
+Only one song can be playing at a time.
+Multiple threads can call player operations concurrently.
+We need thread-safe state transitions.
+
+entities->
+Song
+Playlist
+MusicPlayer
+AudioEngine
+
+Song
+
+Metadata about a song.
+
+Playlist
+
+Maintains ordered collection of songs.
+
+MusicPlayer
+
+Current song
+Playback state
+Current position
+Playback mode
+Handles player operations
+Synchronizes concurrent access
+
+AudioEngine
+
+Abstracts actual audio playback.
+
+
+For the basic LLD:
+
+Songs []*Song
+
+Why slice?
+
+Because playlist is ordered and we frequently need:
+
+currentIndex + 1
+currentIndex - 1
+
+which is O(1).
+
+For shuffle, we can maintain a shuffled index/order list later if needed.
+
+
+   PlaybackStrategy
+              /      |       \
+             /       |        \
+      Sequential   Shuffle   Repeat
+
+
+APIs / Methods
+Play() error
+Pause() error
+Stop() error
+Next() error
+Previous() error
+
+SetMode(mode PlayMode) error
+
+AddSong(song *Song) error
+RemoveSong(songID string) error
+
+GetCurrentSong() *Song
+GetState() PlaybackState
+
+
+Lock only while changing/reading player state. Don't hold the lock during actual audio playback
+
+lock only around shared mutable state because multiple goroutines can read/write it concurrently. The lock gives us a consistent state and prevents data races. I don't hold the lock around slow external operations like audio playback.”

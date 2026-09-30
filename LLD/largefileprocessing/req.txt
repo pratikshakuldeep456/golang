@@ -1,0 +1,130 @@
+Design an internal banking utility service that can process very large files,
+such as a multi-GB CSV ledger statement, without loading the entire file into memory.
+
+The system should:
+
+Accept a large input file.
+Read the file incrementally in chunks/streams.
+Process each chunk independently.
+Perform operations such as validation, transformation, filtering, or enrichment.
+Write the processed output to another file/stream.
+Maintain bounded memory usage, regardless of the total file size.
+Handle malformed records/chunks safely without crashing the entire processing job.
+Provide basic processing status/error reporting.
+
+Process a very large file without loading it completely.
+Read fixed-size chunks.
+Process each chunk.
+Write output incrementally.
+Handle processing errors.
+Support different processing logic later
+
+
+Is input only CSV or arbitrary files?>??
+
+
+File is larger than memory.
+Chunk ends in the middle of a CSV row.
+Malformed CSV record.
+Empty file.
+Very large individual record.
+Processing failure midway.
+Output write failure.
+Duplicate/retried job.
+Concurrent processing of the same file.
+
+
+entiies ->
+file, chunk, Jobs, record
+
+type FileType string
+
+const (
+    CSV   FileType = "CSV"
+    EXCEL FileType = "EXCEL"
+    PDF   FileType = "PDF"
+)
+
+
+
+job ->
+
+type ProcessingJob struct {
+    ID          string
+    InputPath   string
+    OutputPath  string
+    FileType    FileType
+    Status      JobStatus
+}
+
+
+type ChunkReader interface {
+    ReadChunk() (*Chunk, error)
+}
+
+type ChunkProcessor interface {
+    Process(*Chunk) (*ProcessingResult, error)
+}
+
+type ChunkWriter interface {
+    Write(*ProcessingResult) error
+}
+
+
+CSV
+ ├── CSVReader
+ ├── CSVProcessor
+ └── CSVWriter
+
+Excel
+ ├── ExcelReader
+ ├── ExcelProcessor
+ └── ExcelWriter
+
+PDF
+ ├── PDFReader
+ ├── PDFProcessor
+ └── PDFWriter
+
+
+type ProcessorFactory interface {
+    CreateReader(fileType FileType) ChunkReader
+    CreateProcessor(fileType FileType) ChunkProcessor
+    CreateWriter(fileType FileType) ChunkWriter
+}
+
+func CreateReader(fileType FileType) ChunkReader {
+    switch fileType {
+    case CSV:
+        return NewCSVReader()
+    case EXCEL:
+        return NewExcelReader()
+    case PDF:
+        return NewPDFReader()
+    default:
+        return nil
+    }
+}
+
+
+svc logic
+
+type FileProcessorService interface {
+    CreateJob(req CreateJobRequest) (*ProcessingJob, error)
+    GetJobStatus(jobID string) (*ProcessingJob, error)
+    CancelJob(jobID string) error
+}
+
+
+type CreateJobRequest struct {
+    InputPath  string
+    OutputPath string
+    FileType   FileType
+}
+
+type Chunk struct {
+    ID      int
+    Records []Record
+}
+
+func (s *FileProcessingService) ProcessJob(jobID string) error

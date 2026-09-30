@@ -1,0 +1,150 @@
+
+Design an online stock trading platform like Groww/Zerodha
+ where users can view market data and place buy/sell orders for stocks.
+
+Partial execution?
+Example:
+
+BUY 100
+but only 40 shares are available → execute 40 and keep 60 pending?
+I'd assume YES.
+ order - makret limit??
+
+ matching algo -> best price then time??
+ We can assume a MarketDataService provides the latest price. 
+ We don't need to design the exchange's market-data infrastructure.
+
+
+ 1- users can create account, have available cash, protolfoli of holdings
+ 2 - market data -> view stock list n price, price caan change real time
+ 3 - order -> palceorder-> (buy n sell), cancel order, 
+          -> support order type -makret order, limit order
+          order lifecycle -> pending, executed, canceelled, reejcted
+          -> we have to match buy sell 
+4 - portfolia -> after buy increate holding, sell decrease
+matched based on price/time priority.
+Buyer:  BUY 100 shares @ ₹100
+Seller: SELL 100 shares @ ₹100
+→ Trade executed
+5 - funds 
+Buying requires sufficient available funds.
+Selling requires sufficient holdings.
+
+entinies ->
+user, stocks, portfolio, funds, holdings , order 
+order lifecycle ->  pending, executed, canceelled, reejcted
+
+                 Stock
+                   ↓
+              OrderBook
+             /         \
+       Buy Orders    Sell Orders
+           ↓             ↓
+       Max Heap       Min Heap
+             \         /
+             MatchingEngine
+                   ↓
+                 Trade
+
+// order book  OrderBook → current unmatched orders
+// trade -> executed transaction/history
+// MatchingEngine → the brain that matches them It continuously checks the best orders from both sides:
+
+user -> dashboard -> market Data svc -> order (market/limit) -> order svc -> matchmaking engnie
+
+                         USER
+                           │
+                           ▼
+                      DASHBOARD
+                     /          \
+                    /            \
+                   ▼              ▼
+          MARKET DATA SERVICE   ORDER SERVICE
+                   │              │
+                   │              ▼
+                   │        Validate Order
+                   │              │
+                   │              ▼
+                   │       Check Funds/Holdings
+                   │              │
+                   │              ▼
+                   │       Create Order
+                   │              │
+                   │              ▼
+                   │       MATCHING ENGINE
+                   │              │
+                   │              ▼
+                   │         ORDER BOOK
+                   │          /       \
+                   │        BUY       SELL
+                   │          \       /
+                   │           \     /
+                   │          MATCH
+                   │            │
+                   │            ▼
+                   │          TRADE
+                   │         /     \
+                   │        ▼       ▼
+                   │      FUNDS   PORTFOLIO
+                   │
+                   ▼
+             Latest Price
+             / Market Data
+
+User
+Stock
+Order
+OrderBook
+MatchingEngine
+Trade
+Portfolio
+Holding
+Funds
+
+State Pattern → Order lifecycle: PENDING → PARTIALLY_FILLED → EXECUTED/CANCELLED
+Strategy Pattern → Matching strategy, e.g. PriceTimeMatchingStrategy
+Observer / Pub-Sub → After Trade, notify Funds, Portfolio, Notifications
+Repository Pattern → OrderRepository, TradeRepository
+
+datastrucutre ->
+ OrderBook->
+BUY → Max Heap (highest price first)
+SELL → Min Heap (lowest price first)
+Same price → FIFO by timestamp/sequence
+
+HashMap
+orderId → Order
+Fast lookup for cancellation.
+
+tock → OrderBook
+stockId → OrderBook
+
+Map<StockId, OrderBook>
+
+OrderBook
+ ├── Buy:  MaxHeap / TreeMap<Price, Queue<Order>>
+ └── Sell: MinHeap / TreeMap<Price, Queue<Order>>
+
+Map<OrderId, Order>   // cancellation lookup
+
+add(), cancel(), and getBestOrder()
+
+
+addOrder(order)
+cancelOrder(orderId)
+getBestBuy()
+getBestSell()
+
+matchingengine ->
+while bestBuy.price >= bestSell.price:
+    qty = min(buy.remaining, sell.remaining)
+    createTrade(qty)
+    update order
+
+
+
+atomic conditional updates for simple balance/holding checks.
+ex - fund deduce n create order
+
+DB handles concurrency atomically
+UPDATE ... WHERE balance >= amount

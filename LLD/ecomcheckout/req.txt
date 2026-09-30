@@ -1,0 +1,30 @@
+pt: Design a low-level ordering flow that can handle thousands of checkouts per minute, 
+allocate drivers dynamically based on availability, and stream order states flawlessly
+
+
+- multi restayrnet
+Does one order contain items from one restaurant?
+→ Yes, simplify the flow.
+
+Yes, but treat payment as an external service.
+
+nearest available driver or any available driver?
+→ Nearest suitable available driver.
+
+Assume one active delivery at a time.
+
+ customer should receive order-state updates.
+
+Thousands of checkouts/minute, so multiple API instances.
+
+
+
+Multiple restaurants
+One order belongs to one restaurant
+Customer can checkout thousands of times/minute → system must scale horizontally
+Payment is an external service
+Driver allocation is dynamic
+Select the nearest suitable available driver
+A driver can have one active delivery at a time
+Customer gets real-time order-state updates
+Order state transitions must be reliable and consistent

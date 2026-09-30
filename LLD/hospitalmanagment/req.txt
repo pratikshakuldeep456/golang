@@ -1,0 +1,52 @@
+Design a Hospital Management System. Requirements:
+1. Patients are first registered at Reception, who assigns them a priority level (Critical, High, Medium, Low).
+2. Patients wait in a priority queue.
+3. An Initial Consultation Doctor picks the next patient from the queue.
+4. After consultation, patient is assigned to a Specialist Doctor.
+5. System should maintain treatment records.
+
+
+- ordering is based on priorotiy and arrival time
+- multiple Doctor 
+- consultation , specialist Doctor
+
+
+patient with status (WAITING → IN_CONSULTATION → AWAITING_SPECIALIST → IN_TREATMENT → DISCHARGED) and specialty
+doctor - specialist|consultation status of busty avialable 
+Record: patient, doctor, stage, notes and timestamp.
+WaitQueue: a priority heap.
+Hospital owns everything
+How do you notify doctors of a new assignment?	Observer pattern: publish an event and let subscribers (app, SMS) react.
+
+
+
+edge cases -> 
+priority fairnsss, Empty queue, busy doctor, or the wrong doctor type calling an action.
+docotr calling next pateince n pop from queue must be atomic
+histroy record cant be updated
+
+
+dataa strcuutre and design pattern 
+Heap plus an ID→item map: O(log n) push and pop, and O(log n) re-prioritize.
+Status as a state machine
+Append-only log: treatment records, for audit.
+every transition touches several structures (queue, doctor, patient, records), so one lock is the simplest way to keep them consistent
+
+
+APIs (receivers on *Hospital)
+Actor	Method
+Admin	AddDoctor(Doctor) error
+Reception	RegisterPatient(name, age, prio) (Patient, error)
+Reception	EscalatePriority(patientID, newPrio) error
+Initial doctor	CallNextPatient(doctorID) (Patient, error)
+Initial doctor	CompleteConsultation(doctorID, notes, specialty) error
+Specialist	CompleteTreatment(doctorID, notes) error
+Query	GetTreatmentHistory(patientID), WaitingCount()
+
+
+
+Cross-questions to prepare for
+How do you prevent starvation of Low patients? The answer is aging, where effective priority rises with wait time.
+Why one mutex? What would you change at scale? The answer is per-queue locks or sharding by specialty.
+Should Critical preempt a doctor mid-consultation? That's a product decision.
+How would you persist this? Records go in a DB, and the queue can be rebuilt from patient status on restart.
