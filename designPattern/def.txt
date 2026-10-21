@@ -1,0 +1,4 @@
+
+strategy -> family of interchangeble implementations so that code can use them without code changes
+
+factory-> a dediciated peice of code which return obj so that caller  dont have to wrory about its concrete impleemtneations

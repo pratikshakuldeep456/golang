@@ -1,0 +1,250 @@
+Functional
+Select a city and see the movies showing there, with filters by language and date.
+Open a movie and see its theatres and show timings.
+View a show’s seat map with seat type, price and status.
+Select up to 6 seats, which are locked for 10 minutes.
+Confirm the booking only after payment succeeds. Otherwise the seats are released.
+Get a ticket with a QR code and seat details.
+Cancel a booking and get a refund if the show is more than 2 hours away.
+Admins can add movies, theatres, screens and shows.
+
+
+Non-functional
+
+Thread-safe, atomic seat locking and booking, so there is no double booking.
+Extensible, so new seat types, pricing rules and payment methods can be added without changing existing code.
+Clean SOLID design with interfaces for storage and payment.
+Expired seat locks are released automatically.
+Idempotent payment and booking.
+
+
+entities->
+Core entities
+
+User (with a role: Customer or Admin)
+City
+Theatre
+Screen
+ScreenType (2D, 3D, IMAX)
+Seat (belongs to a Screen)
+SeatType (Normal, Premium, Recliner)
+Movie
+Show (movie, screen, start time)
+!ShowSeat (a seat for a particular show, with status and price)
+!SeatLock (seat, show, user, expiry)
+Booking
+Payment
+Ticket
+“I’ll also have enums for seat status, booking status, payment status, and payment method
+
+
+a city has many theaters 
+City 1 — * Theatre
+Theatre 1 — * Screen
+Screen 1 — * Seat
+Screen 1 — * Show
+Movie 1 — * Show
+Show 1 — * ShowSeat
+User 1 — * Booking
+Booking * — * ShowSeat
+Booking 1 — 1 Payment
+Booking 1 — 1 Ticket 
+
+
+
+
+(“a City has many Theatres,
+ a Theatre has many Screens, 
+ and a Screen has many Seats and Shows”)
+ and mention only the tricky ones: Show to ShowSeat and Booking to ShowSeat
+
+ flow-> 
+ user->city-> theatres -> movie -> shows-> seat -> booking -> payment -> ticket
+
+Updated flow:
+user → city → movie → theatre → show → seat map → select seats → lock seats → booking (pending) → payment → confirm → ticket
+with payment fails/timeout → release seats and cancel → refund → release seats.
+
+
+user selects seat flow->
+SeatLockProvider interface 
+-> When a user selects seats, we lock them before showing the payment page
+-> 
+
+
+design patterns and ds->
+    data strucutres->
+    for strucutres The approach: query, then structure ->
+      for 0(1) lookups we can use map for list down booking by id, 
+      for a city we can use a map to list down theaiters its gonna be map[cityid] []theaters
+      we can decide it based on the structure of query pattern
+
+      production based on the query pattern we use the indexing-> 
+      “O(1) in memory, O(log n) with a database index, 
+      and effectively O(1) again for hot reads through a cache. 
+      The network cost is what matters in production.”
+
+      how b tree works is-> 
+      a balanced tree where each node holds many keys,
+       not just one. Each node is sized to fit a disk page,
+        so one node read brings in hundreds of keys.
+         To find a key, we start at the root, 
+         compare it with the keys in the node, 
+         and follow the pointer to the right child. We repeat until we reach a leaf
+
+         Yes, you’ve understood it correctly. In a B+ tree index, one node is stored in one page (8 KB in Postgres, 16 KB in MySQL InnoDB). Here are the steps, with one clarification.
+
+What happens on a lookup
+Read the root page from disk (it’s usually already cached in memory).
+Compare within the page. The page holds many sorted keys, and the database does a binary search among them in memory, which is fast. It finds which child pointer to follow.
+Read the child page and repeat until it reaches a leaf page. Each level costs one page read.
+At the leaf, find your key. The leaf holds either the row itself (InnoDB’s primary key index) or a pointer to the row (Postgres, and secondary indexes in MySQL).
+Fetch the row from its data page if the leaf only had a pointer.
+
+
+Each node is a page that stores boundary keys and pointers to child pages.
+When you search for 100, you start at the root,
+ compare 100 against the boundary keys,
+  and follow the pointer to the child whose range contains 100.
+   You repeat this at each level until you reach a leaf.
+Keys are inserted into the leaves in sorted order. When a leaf page fills up, 
+it splits into two, and a separator key is pushed up to the parent.
+
+
+Design Patterns->
+PaymentStrategy and PaymentFactory
+1) for payments i would want to use Payment strategy interface which has pay() method 
+   and it can be used by all the payment method type
+   and a small factory pick the  method asked 
+   so when we want to add a new payment method we dont have to write condiditon code or update exisiting code 
+   rather the new method can implement the same interface so it follows so this follows the Open/Closed Principle
+
+2) seat and booking goes theough a state life cycle  so it can go through a valid transition -> 
+   avaialblale -> reserved-> ininited -> booked/cancelled  
+
+3) we can use repositiry for store layer -> xtract the data access into an interface so we can swap in a database without changing the services.
+4) to notify user we can use observer ...The observers are notification handlers (a NotificationService, or channels like email, SMS, and push). 
+   The events are things like BookingConfirmed, PaymentFailed, and LockExpired.
+5) if we want price calculation based on festuvals or weekday/end for that as well can use strategy
+
+
+UML. Draw (or list) the classes and interfaces with their main fields, relationships, and method signatures.
+
+User (with a role: Customer or Admin) -> 
+id, email,phone_no, role (cuatomer|admin)
+
+
+City -> 
+ id, pincode ,name 
+
+
+Theatre ->
+id, cityid, name
+
+Screen -> 
+id, theaterid, screentype
+enum
+ScreenType (2D, 3D, IMAX) 
+
+Seat (belongs to a Screen) -> 
+id, seattype, screenid, row, col
+
+
+SeatType (Normal, Premium, Recliner)
+
+
+Movie
+-> id, title, language, metadata , duration
+
+Show (movie, screen, start time)
+->  id, movieid, screenid, startat
+
+Showsheet -> id, showid, seatid, status , price , userid, lock_expiry
+status -> available/locked/booked
+
+Booking-> id, userid , showid, showsheetid[] , status, amount
+
+Payment-> id, bookingid, method,amount, status, idemKey
+
+Ticket-> id, bookingid, qr code
+
+enums->
+SeatStatus {Available, Locked, Booked}
+ BookingStatus {Pending, Confirmed, Cancelled}
+  PaymentStatus {Pending, Success, Failed, Refunded}
+   PaymentMethod {UPI, Card, NetBanking}
+    SeatType {Normal, Premium, Recliner}, ScreenType {2D, 3D, IMAX}
+
+
+interfaces->
+PaymentStrategy interface {
+     pay( amount int)  error, bool
+     refund (amount, payid) error 
+}
+// UPImehod CcMethod, DcMethod
+
+PaymentFacotory
+ get pymentmETHOD(method type) return PaymentStrategy
+
+interfce pricecALCUALTIONsTRATEGY {
+    calculte(show, seat) float64
+}
+
+//BestPricicng, WeekenedPricicng, WeekdayPricicing, fESTIVLEPriciing
+
+for observers ->
+<interface> Subscriber {
+   OnEvent(event)
+}
+EmailNotifier, SMSNotifier ──implements──▷ Subscriber
+EventPublisher
+    + Subscribe(s Subscriber)
+    + Publish(event)
+
+
+svc logic->
+
+AdminSvc 
+add Movie
+Updated
+DETLEET
+
+
+SearchSvc
+  GetMovies(city id , filterany) []movies
+  GetShows(movieid, cityid, date) []Show
+  GetSeatMap(showid) []Seat
+
+//auth jwt
+BookingSvc
+  Locker seatLocker
+ CreateBooking(showid, seatid ) booking, status
+ ConfirmBooking(bookingid, method) (Ticket, error)
+ CancelBooking(bookingid)
+
+
+type seatLocker interface {
+    LockSeats(showID string, seatIDs []string, userID string) error
+    UnlockSeats(showID string, seatIDs []string, userID string) error
+    ValidateLock(showID string, seatIDs []string, userID string) bool
+}
+
+
+The first request takes the lock atomically, and the second request fails with ‘seat unavailable’. The lock stays until the booking is confirmed or the TTL expires.”
+
+irst, I try to re-acquire the seat with a conditional update: lock it for this user only if it’s still Available. If that succeeds, I confirm the booking. If someone else has taken it, I refund the payment and mark the booking Failed. To reduce this, I extend the lock when payment starts.”
+
+“The lock lives in Redis with a TTL, so if the app server crashes, the lock expires on its own and the seats free up. Nothing is stuck. If a Pending booking row was already saved, a cleanup job marks Pending bookings older than 10 minutes as Expired. And the database unique constraint on show and seat remains the final guard.”
+
+Confirmation is idempotent, so I retry it with the booking ID. If the seat can’t be confirmed because the lock was lost, I refund the payment.
+
+I check that the booking belongs to the user and that the show is more than 2 hours away. Then I refund through the payment strategy, set the booking to Cancelled, release the seats back to Available with a conditional update, and publish a BookingCancelled event.”
+
+Booking shouldn’t know how users are notified. BookingService publishes an event such as BookingConfirmed, and subscribers like email, SMS and push react. Adding a channel is a new subscriber, and a slow or failing notifier can’t break the booking.
+
+The main weak points are: a lock expiring mid-payment (mitigated by extending the TTL and refunding), a dependency on Redis (the database constraint is the final guard), payment gateway and database drifting apart (a reconciliation job), and hot shows on release day causing contention (a per-show lock and caching the seat map).”
+
+Weak points. Naming them with mitigations is a strength: important to me the weak points are here that we are checking uh, the same status lock in the release when the release is down we have to rely on the database and now we have two system we have to keep it in sync Thank you.
+-> Make the database the source of truth. Redis holds only the temporary lock.
+-> Reconciliation job. A periodic job finds Pending bookings and stale locks and fixes them.
+-> Redis high availability. A replica with automatic failover, so a single node failure isn’t an outage.

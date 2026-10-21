@@ -1,0 +1,132 @@
+Requirements
+
+The rider enters pickup and drop locations, picks a ride type (Bike, Auto, Cab), and sees a fare estimate.
+The rider requests a ride, and the system matches the nearest available driver of that type.
+The driver accepts or rejects. On a reject or timeout, the system tries the next nearest driver.
+The driver arrives, starts the trip with an OTP, and ends it at the drop.
+The fare is calculated from distance, time and ride type.
+The rider pays by card, UPI or cash, and the trip closes only after payment succeeds.
+The rider can cancel before the trip starts. A fee applies once a driver is assigned.
+A driver can go online or offline and update their location.
+
+Non-functional
+
+Driver assignment is atomic: one driver gets one active ride, and one ride gets one driver.
+The trip follows a state machine with valid transitions only.
+Payment is idempotent.
+Matching, pricing and payment are extensible.
+
+Entities
+
+User (role: Rider, Driver, Admin)
+Driver (vehicle, location, status)
+Vehicle (number, type)
+Location (lat, long)
+RideRequest (rider, pickup, drop, ride type)
+Trip (request, driver, times, distance, fare, status)
+Payment (trip, amount, method, status, idempotency key)
+
+
+
+Enums: RideType, DriverStatus {Offline, Available, OnTrip}, TripStatus {Requested, DriverAssigned, Arrived, Started, Completed, Cancelled}, PaymentMethod, PaymentStatus
+
+Relationships: A Rider has many RideRequests. A RideRequest becomes one Trip. A Trip has one Driver and one Payment. A Driver has at most one active Trip.
+
+flow->
+The rider enters the pickup and drop locations and selects a ride type, for example normal or premium. We estimate the fare and create a ride request in the Requested state. We then find the nearest available driver, using a grid or geohash index, and notify them. If the driver rejects or doesn’t respond in time, we move to the next nearest driver. When a driver accepts, we atomically check that the driver is still available and the request is still open, and then assign them. The trip moves through states: DriverAssigned, Arrived, Started and Completed. Each state allows only valid next transitions, so I’ll use the State pattern. The rider can cancel before the trip starts, with a fee once a driver is assigned. On completion we calculate the final fare, and the rider pays through an idempotent payment call.”
+
+or data structures, I’ll use a geohash grid: a map from cell ID to the set of available driver IDs, plus a map of driver ID to driver. I look up the rider’s cell and its neighbours, then compute the Haversine distance only on those candidates. In production I’d use Redis GEO. For patterns, I’ll use Strategy for pricing, with a base fare by ride type and a peak-hour wrapper. I’ll use Strategy with a Factory for payment (Card, UPI, Cash), Observer to notify the rider and driver, and State for the trip transitions
+
+UML->
+
+Location   { lat, long float64 }
+User       { id, name, role }
+Vehicle    { number string; rideType RideType }
+Driver     { id; user; vehicle; location Location; status DriverStatus }
+RideRequest{ id; riderID; pickup, drop Location; rideType; estimatedFare }
+Trip       { id; request; driverID; status TripStatus; state TripState;
+             startAt, endAt; distance; fare; otp }
+Payment    { id; idemKey; tripID; amount; method; status }
+
+
+
+PricingStrategy  { Fare(distance, duration, rideType) amount }
+   BasePricing (by ride type), PeakHourPricing wraps another PricingStrategy
+PaymentStrategy  { Pay(amount) error }   → CardPayment, UPIPayment, CashPayment
+PaymentFactory   { Get(method) PaymentStrategy }
+MatchingStrategy { Match(pickup, rideType) []Driver }  → NearestDriver
+TripState        { Accept, Arrive, Start, Complete, Cancel }
+   → RequestedState, AssignedState, ArrivedState, StartedState, CompletedState, CancelledState
+TripObserver     { OnStatusChange(trip) }  → RiderNotifier, DriverNotifier
+
+
+RideService that owns the full lifecycle: request, estimate, match, accept or reject, start, end, cancel. If the interviewer asks “where does cancel live?”, the answer is then one word.
+
+
+I’ll keep it minimal. For interfaces I’ll have three: a pricing strategy,
+ a payment strategy, and a matching strategy for the matching rule.
+  For services I’ll have three. The user service onboards riders and drivers.
+   The ride service owns the whole trip, from the fare estimate and matching through accept,
+    start, end and cancel, and it holds the driver index for location and availability. 
+    The payment service handles all payments. I’m keeping matching and the trip lifecycle together 
+    because the rider and driver flows depend on each other, so splitting them adds complexity without a benefit.”
+
+UserSvc (onboarding only)
+
+UserSvc {
+  users map[userID]*User
+  RegisterRider(name) (User, error)
+  RegisterDriver(name, vehicle) (Driver, error)
+  GetUser(id) (User, error)
+}
+
+
+RideSvc {
+  index    DriverIndex          // grid: cell → set of available driverIDs
+  pricing  PricingStrategy      // injected
+  matcher  MatchingStrategy     // injected
+  trips    map[tripID]*Trip
+  mu       per-trip lock
+
+  // driver side
+  GoOnline(driverID), GoOffline(driverID)
+  UpdateLocation(driverID, loc)
+
+  // rider side
+  EstimateFare(pickup, drop, rideType) amount
+  RequestRide(riderID, pickup, drop, rideType) (Trip, error)
+  CancelRide(tripID) (fee, error)
+
+  // driver actions on a trip
+  AcceptRide(tripID, driverID) error
+  RejectRide(tripID, driverID) error
+  Arrive(tripID) error
+  StartRide(tripID, otp) error
+  EndRide(tripID) (fare, error)
+
+  // private
+  findDriver(trip), assign(trip, driver), setState(trip, next)
+}
+
+
+PaymentSvc
+
+PaymentSvc {
+  factory   PaymentFactory
+  payments  map[idemKey]Payment
+  Pay(tripID, amount, method, idemKey) (Payment, error)
+  GetPayment(id) (Payment, error)
+}
+
+
+Interfaces
+PricingStrategy { Fare(distance, duration, rideType) amount }, with BasePricing and a PeakHour wrapper.
+MatchingStrategy { Match(pickup, rideType, candidates) []Driver }, with NearestDriver as the first implementation.
+PaymentStrategy { Pay(amount) error }, with Card, UPI and Cash, chosen by PaymentFactory.
+
+
+
+
+Assignment has a deadline. If the driver doesn’t reach the Arrived state in time, or their location updates stop, I unassign them, move the trip back to Requested, and offer it to the next nearest driver. The unassign is also a conditional update, so it can’t clash with a late accept. If no driver is found, I cancel the ride and tell the rider.”
+
+Q6: “I’ll test the concurrent cases first. 100 goroutines accept the same trip, and exactly one succeeds, using go test -race. Then cancel versus accept at the same moment, where one wins and the state stays valid. Then invalid transitions, a double Pay with the same key giving one charge, nearest-driver ordering with mock locations, and a timeout that reassigns the ride.”

@@ -1,0 +1,5 @@
+BookMyShow
+Parking Lot
+Rate Limiter
+Cache (LRU/LFU)
+Ride Sharing or Food Delivery

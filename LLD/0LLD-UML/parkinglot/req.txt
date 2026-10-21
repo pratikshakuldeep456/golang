@@ -1,0 +1,190 @@
+Levels: multiple floors-> tells if we need a floor entity and spot allocation has to be fchosen among floors
+Vehicle types: motorcycle, car, and truck. Each needs a matching spot size: small, medium, large.
+Gates: multiple entry gates and multiple exit gates -> if multipel gates we can allow spot allocation parally for 2 vehicle so we need to handle it properly
+Pricing: hourly, with a different rate per vehicle type-> price calcuation vaties based on the veh type 
+Payment: at the exit, by card or UPI.
+Out of scope: reservations, EV charging, and lost tickets.
+At exit, the fee is calculated from the duration and the vehicle type” and “If no spot of that type is free, entry is rejected.”
+
+req->
+user can go to entry gates 
+ticket is genentated for nearlest available spot based on the vehicletype
+user can park the vehicle
+user can exit thruogh gate and do the payment 
+once payment done mark spot available and exit the vehicle 
+
+non func req->
+we sholud avoid double allocation  -> thread safe and atomic 
+extensible and clean code
+payment and exit should be idempotent
+
+entites->
+ParkingLot(gates,floors)
+vehicle(vehicletype, number)
+enum vehicletype
+
+gate exit, entry gate
+
+Ticket (vehicle, spot, entry gate, entry time)
+
+floors 
+spot(ticket, floor, type )
+status enum
+spotType(2 wheel, 4 wheeler , xl) 
+
+payment->
+Payment method withpaymentvstatus enum 
+
+mapping->
+
+A ParkingLot has many Floors and Gates,
+ and a Floor has many Spots. 
+ A Ticket references one Vehicle and one Spot.
+  At any moment, a spot and a vehicle each have at most one active ticket,
+   but over time they have many. Each ticket has one payment.
+
+
+flows->
+At an entry gate,
+ inside one atomic operation,
+  I take the nearest free spot of the vehicle’s type from that type’s min-heap and mark it Occupied.
+   If none is free, I reject the entry. 
+   I then generate a ticket with the spot, the vehicle number and the entry time.
+    At exit, a PricingStrategy calculates the fee from the duration and the vehicle type. 
+    The payment goes through a PaymentStrategy chosen by a factory,
+     with an idempotency key so a retry never charges twice.
+      When payment succeeds, I release the spot back to the heap and open the gate
+
+NearesttogATEmethod(vehicle type, gateid)
+
+howz minheap useful here-> 
+freeSpots = map[SpotType] → minHeap
+Small  → heap of free small spots
+Medium → heap of free medium spots
+Large  → heap of free large spots
+
+eaxh heap will have floor-spotid
+when availablr a spot push it in heap
+
+
+Data structures
+
+Each floor holds a list of its spots.
+For every spot type, a min-heap of free spots, ordered by floor then number, with a mutex on it.
+Entry pops the nearest free spot. Exit pushes it back.
+Tickets are kept in a map by ticket ID, so lookup at exit is O(1).
+Payments are kept in a map by idempotency key, so a retry never charges twice.
+
+Design patterns
+
+A PaymentStrategy interface, with UPIPayment and CardPayment implementing it, picked by a factory.
+A PricingStrategy for vehicle type, festive and peak-hour rules.
+A new payment method or pricing rule is a new class, so existing code doesn’t change (Open/Closed Principle).
+
+
+
+
+entites->
+vehicle(plateNo, behicletype)
+gate->  id, type entry|exit
+parkingLot -> []floor, []gates
+floors ->  id, []spots
+spot -> id, floorid,  status, type 
+ticket -> id, vehicle, spot, entryAt, status
+
+paymentStrategy Interface{
+    pay( amount)
+}
+
+// credcard , upi
+//ideomotocy on paymrntid
+payent -> id, idemId, price, method, status, ticketid
+
+Enums: VehicleType {TwoWheeler, FourWheeler, XL},
+ SpotType {TwoWheeler, FourWheeler, XL}
+  (or Small, Medium, Large, if you state the mapping),
+   SpotStatus {Available, Occupied}, GateType {Entry, Exit},
+    PaymentMethod {Card, UPI}, PaymentStatus {Pending, Success, Failed},
+     TicketStatus {Active, Closed}.
+
+interfaces
+PaymentStrategy { Pay(amount) error }, implemented by UPIPayment and CardPayment
+PaymentFactory { Get(method) PaymentStrategy }
+PricingStrategy { CalculateFee(ticket, exitTime) amount }, implemented by VehicleTypePricing, PeakHourPricing, FestivePricin
+
+
+svc logic
+
+
+AdminSvc {
+    addFloor()
+    addSpot()
+    updateSpot()
+}
+ParkingLotSvc {
+    Enter() ->  nearestSlotAvailable() , GenerateTicket(), ParkvEHICLE() 
+    GenerateTicket() //private method
+    nearestSlotAvailable() //private 
+    ParkvEHICLE() //private method
+    Exit(ticketdi, method) -> call   paymrnts.pay, paymentStatus(ticketid) , unPARKvEHICLE(), updateTicketStatus()
+    unPARKvEHICLE() //private
+    PricicngStrategy() //private
+}
+can use heap for efficient lookup on finding neareestSlotAvaialble()
+
+PricingStrategy { CalculateFee(ticket, exitTime) amount }, implemented by VehicleTypePricing, PeakHourPricing, FestivePricin
+// TwoWheeler strategy ......
+
+
+PaymentSvc {
+     Pay(amount, method type, iticketid, idemKey)
+     GetPayment(ticketid ) Payment, error
+}
+PaymentStrategy { Pay(amount) error }, implemented by UPIPayment and CardPayment
+PaymentFactory { Get(method) PaymentStrategy }
+
+
+UPDATE spots SET status='OCCUPIED' WHERE id=? AND status='AVAILABLE', then check the rows affected. One row means you won, zero means you lost.
+
+Only one car gets the spot, and the other is rejected. 
+Allocation is atomic. In memory,
+ I hold a mutex per spot type around popping the nearest free spot and marking it Occupied,
+  so only cars of the same type contend, and the critical section is short. 
+  In production, with several servers, I’d use a conditional update, setting the spot to Occupied only where its status is Available,
+   and check the rows affected. One request wins, and the other gets a lot-full response.”
+
+
+
+A user pays at the exit, but the app crashes or the network drops, and the user taps pay again. How do you make sure they’re not charged twice, and what state is the spot in?
+he user is charged only once, because every payment attempt carries an idempotency key. When the user taps pay, the client sends the key with the request, and the payment service first checks the key. If the key is new, it creates a Payment record as Pending, charges through the payment strategy, and saves the result under that key. If the user taps again after a crash or a network drop, the key is found, and the service returns the stored result and never calls the gateway a second time. If the first attempt is still in progress, the second request waits or gets ‘in progress’ and doesn’t start a new charge.
+The spot stays Occupied the whole time. It’s released only after the payment succeeds, so a failed or interrupted payment never frees a spot early. If payment fails, the ticket stays Active, and the user can retry, with the same key for the same attempt or a new one after a failure. Releasing the spot is idempotent too: it’s done only when the ticket moves from Active to Closed, so a retry can’t release it twice.”
+
+The key is generated per payment attempt, often on the client, and the server stores it with the payment in a map with a unique constraint.
+A conditional update (Pending → Success) makes the status change safe against a duplicate gateway callback.
+Keep keys for a limited time (say 24 hours) and then clear them.
+
+
+Adding a vehicle type is a data change.
+ I add it to the VehicleType enum,
+  map it to a spot type, create a free-spot heap for that type,
+   and add its hourly rate. Enter, Exit and payment don’t change.
+    A bus needing two spots is bigger: the allocator takes a count and pops two adjacent large spots atomically, 
+    and the ticket holds a list of spots
+
+
+for mocking
+Setup: a mock lot with several floors, all spot types and multiple gates.
+Concurrency test: one free medium spot, 50 goroutines calling Enter at once. Assert exactly one ticket, 49 rejections, and no spot assigned twice. Run with go test -race.
+Mocks: a fake payment gateway (succeed, fail or time out on command) and a fake clock.
+Pricing: table-driven tests per vehicle type, peak hour and festive rule.
+Idempotency: the same key sent twice is charged once.
+Exit: the spot is released only after payment succeeds, and a failed payment keeps it Occupied.
+
+What are the weak points in your design, and how would you address them?”
+Add the weak point that interviewers expect: all the state is in memory on one server.
+ It’s lost on a crash and can’t run on several servers. Mitigation: persist spots and tickets in a database
+ , use conditional updates (status='AVAILABLE') for allocation, and rebuild the free-spot heaps from the database at startup.
+
+
+for heap in prod -> Option 1: a Redis sorted set (closest to the heap)
+sing an atomic pop for allocation,
